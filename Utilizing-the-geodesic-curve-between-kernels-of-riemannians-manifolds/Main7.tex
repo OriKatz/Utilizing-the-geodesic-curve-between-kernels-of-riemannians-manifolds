@@ -1,0 +1,1172 @@
+\documentclass[]{article}
+\usepackage[acronym,smallcaps]{glossaries}
+%\usepackage{hyperref}
+%\usepackage{mathtools}
+\usepackage{mwe}
+\usepackage{subfig}
+\usepackage{amssymb,amsmath,amsthm}
+\usepackage{epsfig}
+\DeclareMathOperator*{\argmin}{argmin}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{algorithm}
+\usepackage[noend]{algpseudocode}
+\newcounter{algsubstate}
+\makeatletter
+\renewcommand{\thealgsubstate}{\arabic{ALG@line}.\alph{algsubstate}}
+\makeatother
+\newenvironment{algsubstates}
+{\setcounter{algsubstate}{0}%
+	\renewcommand{\State}{%
+		\refstepcounter{algsubstate}%
+		\Statex {\footnotesize\alph{algsubstate}:}\space}}
+{}
+\newtheorem{claim}{Claim}
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[section]
+\newtheorem{theorem}{Theorem}
+
+\usepackage{amsthm}
+\usepackage[utf8]{inputenc}
+\usepackage[english]{babel}
+
+\newacronym{SPD}{SPD}{symmetric positive-definite}
+\begin{document}
+	
+	\title{Utilizing the geodesic curve between kernels of riemannians manifolds}
+	\maketitle
+	
+	\section{Introduction}
+	%This paper summarizes my current work in the field of multiple riemannian manifold analysis, specifically in this paper I will focus on the case of data which is being observed by $2$ observables.
+	%
+	Consider a hidden variable which is being measured by two observable (views), besides that hidden variable of interest, each view may be contaminated by other noises which are view-related. 
+	Given the obtained measurements from each view, our goal is to obtain a low-dimensional representation for the common hidden variable, while suppressing the noise effects which are view-related.
+	%
+	In this paper we utilize tools from riemannian geometry of symmetric and positive definite (SPD) matrices and propose a method for fusing the information within two views for the purpose of extracting the common sources of variabilities. Besides the proposed fusing scheme, we provide another insight which is a by-product of the proposed algorithm - a notion of weighting for the amount of information taken from each view.
+	%
+	We suggest a solution both for the supervised case and both for the unsupervised case.
+	In the supervised case, where the common sources of variabilities are known, we proposed a method for finding the optimal weighting for the information acquired from each view.
+	In the unsupervised case, where the common sources of variabiles are unknown, we provide a heuristic method, based on the analysis of SPD matrices, in order to estimate the desired weighting.
+	%
+	Although we still don't have a full theoretical analysis of the proposed method, we present demonstrations based on simulated and real data that support our claims.
+	%
+	In section \ref{sec:RiemannianIntro} we will provide some preliminaries and definitions from the field of riemannian geometry of SPD matrices and describe its utilization for the purpose of multiple riemannian manifold analysis.
+	%
+	%TODO
+	In section \ref{sec:SynthData} we will demonstrate the proposed analysis on toy examples. We will use the strips toy example as a case study, and provide some further toy examples in order to demonstrate our claims by empirical means. In section \ref{sec:RealData} we will provide some further demonstrations on real data.
+	
+	
+	%\section{Riemannian geometry of SPD matrices}
+	%\label{sec:RiemannianIntro}
+	%In this section we provide a short introduction for SPD matrices in the context of riemannian geometry.
+	% and provide some further analysis that will be utilized within the proposed method.
+	
+	%\subsection{Preliminaries for riemannian geometry of SPD matrices}
+	\section{Preliminaries for riemannian geometry of SPD matrices}
+	\label{sec:RiemannianIntro}
+	In this section we provide a short introduction for SPD matrices in the context of riemannian geometry.
+	The space $\mathbb{R}^{n\times n}$ is a Hilbert space equipped with the inner product $\langle A,B\rangle = tr(A^TB)$. The set of symmetric matrices: $\mathcal{S}(n)$ is a real vector space in $\mathbb{R}^{n\times n}$. A matrix $K \in \mathbb{R}^{n\times n}$ is a SPD matrix if all its eigenvalues are strictly positive. The subset of SPD matrices: $\mathcal{P}(n)$ is an open set in $\mathcal{S}(n)$. Hence it is a differentiable riemannian manifold. The tangent space to $\mathcal{P}(n)$ at any of its points $K$ is the space $\mathcal{T}_K\mathcal{P}(n) = \{K\} \times \mathcal{S}(n)$. The inner product defined on on $\mathcal{S}(n)$ leads to a riemannian metric on the manifold $\mathcal{P}(n)$. At a point $K \in \mathcal{P}(n)$ this metric is given by the differential:
+	\begin{equation}
+	\label{eq:metric}
+	ds=||K^{-1/2}dKK^{-1/2}||_2 = \sqrt{tr(K^{-1}dK)}
+	\end{equation}
+	This differential defines the length of piecewise differentiable paths is $\mathcal{P}(n)$. Specifically, we will focus on the geodesic path between pairs of SPD matrices, which according to \cite[equation 6.11]{bhatia2009positive} is unique and has the following parametrization:
+	\begin{equation}
+	\label{eq:geodesic}
+	\gamma(t)= K_1^{1/2}\big( K_1^{-1/2}K_2K_1^{-1/2} )^t K_1^{1/2}, 0\leq t \leq1
+	\end{equation}
+	where $K_1,K_2 \in \mathcal{P}(n)$.
+	
+	However, in some cases, the matrices that we would like to process might possess some small eigenvalues that due to numerical issues might be quantized into zeros. In that cases the matrices are no longer strictly positive and the above-mentioned metric is not defined and as result also the geodesic is no longer defined.
+	In this cases we will use a slightly different framework proposed in \cite{bonnabel2009riemannian} which is a generalization of the previous one for positive-semidefinite matrices of fixed-rank .
+	In \cite{bonnabel2009riemannian} the authors suggest a metric which is derived from a well-chosen Riemannian quotient geometry that generalizes the reductive geometry of the positive cone. Based on the proposed metric the authors suggest a curve that approximate the geodesic curve. Throughout this paper we will use the notion of $\gamma(t)$ both for the real geodesic defined in \ref{eq:geodesic} and both for its approximation defined in \cite[equation 14]{bonnabel2009riemannian}.
+	
+	
+\section{Problem formulation}
+\label{sec:ProposedMethod}
+
+We revisit the problem studied in \cite{lederman2018learning}. 
+Consider three hidden random variables:
+\begin{equation*}
+	(X,Y,Z) \sim \Pi_{x,y,z}(X,Y,Z)
+\end{equation*}
+from the (possibly high-dimensional) spaces $\mathcal{X,Y,Z}$, where given the variable $X$, the variables $Y$ and $Z$ are independent, namely, their joint distribution function can be factorized as follows
+\begin{equation*}
+	\Pi_{x,y,z}(X,Y,Z) = \Pi _x (X) \Pi_{y|x}(Y|X)\Pi_{z|x}(Z|X)
+\end{equation*}
+The three hidden variables are observed via two observation functions $g$ and $h$
+\begin{align}
+	S^{(1)} &= g(X,Y)\\
+	S^{(2)} &= h(X,Z)
+\end{align} 
+where $S^{(1)}$ and $S^{(2)}$ are two observable random variables.
+These observations could represent different views or different measurements, they could be originated from different sensors of possibly different modalities, or they could be two transformations or the output of two processing pipelines.
+%
+The above model implies that the two observations are driven by a common variable $X$ and two observation-specific variables $Y$ and $Z$.
+% TODO: $g$ and $h$ are bilipschitz functions?
+
+Each realization of the hidden variables $(X,Y,Z)$ consists of the hidden triplet $(x_i,y_i,z_i)$.
+While $x_i,y_i$ and $z_i$ are hidden and not accessible directly, they give rise to two observations $s^{(1)}_i = g(x_i,y_i)$ and $s^{(2)}_i = h(x_i,z_i)$.
+	
+In \cite{lederman2018learning}, the focal point was on recovering the common variable in an unsupervised data-driven manner. More concretely, considering $N$ realizations of the hidden variables $\{(x_i,y_i,z_i)\}_{i=1}^N$, which give rise to $N$ pairs of accessible observations $\{(s^{(1)}_i,s^{(2)}_i)\}_{i=1}^N$, the goal was to recover a parametrization of the common variable realizations $\{x_i\}_{i=1}^N$. 
+	
+In this paper, we revisit the problem of recovering the hidden common variable from two observations. In addition, we address other tasks arising from the above problem setting. Specifically, we aim to separate and detect both the common and the observation-specific components. Such an ability facilitates unsupervised observation quality assessment based on the dominance of the different components comprising each observation. Another important aspect which is studied here is the generalization of the setting to multiple (more than two) observations.
+	
+\section{Proposed method}
+
+\subsection{Overview}
+We propose an operator-theoretic approach based on symmetric positive-definite kernels and Riemannian geometry.
+The outline of the main component consists of the following construction.
+%
+Given two sets of $N$ observations $\{(s^{(1)}_i)\}_{i=1}^N$ and $\{(s^{(2)}_i)\}_{i=1}^N$, we build two affinity matrices $\mathbf{W}^{(1)}$ and $\mathbf{W}^{(2)}$ as follows:
+	\begin{equation}
+	\label{eq:AffinityMatrices}
+	W_{i,j}^{(1)}=\exp\left(-\frac{\|\boldsymbol{s}^{(1)}_i-\boldsymbol{s}^{(1)}_j\|_{M_1}^2}{\varepsilon^{(1)}}\right) ; W_{i,j}^{(2)}=\exp\left(-\frac{\|\boldsymbol{s}^{(2)}_i-\boldsymbol{s}^{(2)}_j\|_{M_2}^2}{\varepsilon^{(2)}}\right)
+	\end{equation}
+	for all $i,j=1,\hdots,N$, where $\varepsilon^{(1)}$ and $\varepsilon^{(2)}$ are tuneable kernel scales, and $\|\cdot\|_{M_1}$ and $\|\cdot\|_{M_2}$ are two metrics corresponding to the two spaces of observations.
+% TODO: fix? notation $K_1$ or $K^{(1)}$
+Based on the two affinity matrices, we compute two discrete diffusion operators $\mathbf{K}_1$ and $\mathbf{K}_2$.
+Traditionally, diffusion operators are constructed by normalizing the affinity matrices as described in \cite{coifman2006diffusion}. Here we utilize the Sinkhorn-Knopp algorithm described in \cite{knight2008sinkhorn} to build two bi-stochastic diffusion operators from the two affinity matrices, which were introduced and studied in \cite{coifman2017manifold}.
+%
+Considering bi-stochastic diffusion operators plays a key role in this work.
+Since the obtained bi-stochastic operators are \gls{SPD} matrices, they pertain to a well-studied Riemannian geometry. Specifically, the bi-stochastic operators, as SPD matrices, lie on a Riemannian manifold with particular useful properties. Specifically, as presented in Section \ref{sec:RiemannianIntro}, the Riemannian manifold of SPD matrices has a closed-form expression for the metric \eqref{eq:metric} and for the unique geodesic path between two SPD matrices \eqref{eq:geodesic}.
+	
+Broadly, the proposed approach combines three ingredients. 
+%TODO: which are usually studied separately and whose combination in the context of this work is a contribution by itself.
+The first ingredient is the use of bi-stochastic operators based on affinity matrices, which are constructed from data as described above, relying on the well-established fields of kernel methods, dimension reduction, and manifold learning.
+%
+The second ingredient is the Riemannian geometry of the bi-stochastic operators. Specifically, we consider the collection of operators along the geodesic path connecting $\mathbf{K}_1$ and $\mathbf{K}_2$, which are given by:
+\begin{equation}
+	\gamma(t)= \mathbf{K}_1^{1/2}\big( \mathbf{K}_1^{-1/2}\mathbf{K}_2\mathbf{K}_1^{-1/2} )^t \mathbf{K}_1^{1/2}
+\end{equation}
+where $0\leq t \leq1$ parameterizes the arc length of the path. In the sequel, these operators will serve as the main components 
+of the proposed algorithms, addressing the tasks outlined in Section \ref{sec:ToyProblem}.
+%
+Finally, the third ingredient is the flow of the spectra of the operators $\gamma(t)$ with respect to $t$. Note that $\gamma(t)$ have real and positive spectra since they are SPD matrices.
+
+TODO: remark on symmetric positive semi-definite operators and the fixed-rank paper...
+
+An illustration for the proposed approach, highlighting the benefits stemming from the combination of the three ingredients described above, is given in the following toy problem.
+		
+\subsection{Illustrative toy problem}
+\label{sec:ToyProblem}
+We use the toy problem presented in \cite{lederman2018learning} in order to visualize the problem setting and to demonstrate the proposed approach. We begin with a brief description.
+%
+Three objects: Yoda, Bulldog and Bunny, are placed on three rotating displays, as depicted in Figure \ref{fig:Puppets_Setup}. Two cameras are used to capture simultaneous snapshots of the rotating objects: the field of view of Camera 1 includes Yoda and Bulldog, as presented in Figure \ref{fig:a}, and the field of view of Camera 2 includes Bulldog and Bunny, as presented in Figure \ref{fig:c}.
+%	
+With respect to the considered problem setting, the rotation angles of Bulldog, Yoda and Bunny are the hidden variables $X$, $Y$ and $Z$, respectively, and the snapshots from Camera 1 and Camera 2 are the observations $S^{(1)} = g(X,Y)$ and $S^{(2)} = h(X,Z)$, respectively. 
+
+	\begin{figure}[t]%
+		\centering
+		\subfloat[]{\includegraphics[scale=.25]{FiguresPuppets/Capture.PNG}\label{fig:a}} \\
+		\subfloat[]{\includegraphics[scale=.35]{FiguresPuppets/s1_100043.jpg}\label{fig:b}}% 
+		\hspace{1cm} \subfloat[]{\includegraphics[scale=.35]{FiguresPuppets/s2_100043.jpg}\label{fig:c}}\\
+		\caption{(a) The experiment setup of the toy problem. (b) Sample snapshot
+			taken by Camera 1, where only Yoda (the green action figure) and the
+			bulldog are visible. (c) Sample snapshot taken by Camera 2, where only the
+			bunny and the bulldog are visible.}%
+		\label{fig:Puppets_Setup}%
+	\end{figure}
+
+The captured snapshots forms a set of $N$ pairs of observations: $\{(s^{(1)}_i,s^{(2)}_i)\}_{i=1}^N$. Each observation is column-stack of the captured snapshots, i.e. $s^{(1)}_i,s^{(2)} \in \mathbb{R}^{3 \times N_p}$ where $N_p$ is the number pixels in each snapshot.
+%
+Importantly, we note that the proposed approach is data-driven and does not rely on prior knowledge of the specific problem setup; in particular, the knowledge that the hidden variables are rotation angles, that the observations are images, what is the common variable, and the the hidden variables appear in separate coordinates (pixels) of the observation is not taken into account. In \cite{lederman2018learning} the authors demonstrated that point by applying random projections to the captured images.
+%
+Following the construction described above, we compute two bi-stochastic operators $\mathbf{K}_1$ and $\mathbf{K}_2$: we calculate the affinity matrices for each observable according to \ref{eq:AffinityMatrices}. For the sake of simplicity of this demonstration we use the euclidean metric, and the kernel's scale is chosen to be the median of the pairwise distances in each observable. We then apply the 
+Sinkhorn-Knopp algorithm \cite{knight2008sinkhorn} and derive the bi-stochastic operators $\mathbf{K}_1$ and $\mathbf{K}_2$.
+%
+We set a discrete uniform grid of $N_t=200$ points $t_j$ from the interval $[0,1]$, and according to \eqref{eq:geodesic}, we calculate the set of operators $\{\gamma(t_j)\}_{j=1}^{N_t}$ along the geodesic path connecting $\mathbf{K}_1$ and $\mathbf{K}_2$. 
+%
+Then, we compute the leading $20$ eigenvalues and their corresponding eigenvectors of each operator $\gamma(t_j)$. 
+Let $\mu(t_j,k)$ denote the $k$th eigenvalue of $\gamma(t_j)$.
+
+In Figure \ref{fig:Puppets_EVDiagrams_Geodesic}, we scatter plot the obtained $\mu(t_j,k)$ in the following manner.
+%
+The vertical axis corresponds to the location along the geodesic path $t_j$, and the horizontal axis corresponds to values $-\log(\mu(t_j,k))$.
+
+\begin{figure}[t]
+\centering
+\includegraphics[scale=0.2]{FiguresPuppets/Puppets_EVDiagram_Geodesic.eps} 
+\caption {A diagram of the flow of the spectra of $\gamma(t)$ with respect to $t$. The vertical axis denotes the position on the geodesic path $t_j \in [0,1]$, and the horizontal axis denotes the values of the $20$ leading eigenvalues of $\gamma(t_j)$ in logarithmic scale.}
+\label{fig:Puppets_EVDiagrams_Geodesic}
+\end{figure}
+
+%TODO: The goal is to find a parametrization of the common variable $X$, i.e., the rotation angle of the bulldog, from the snapshots.
+
+Solely by observation, the eigenvalues flow diagram in Figure \ref{fig:Puppets_EVDiagrams_Geodesic} reveals important information about the problem and the questions, which we aim to target in this work. In the sequel, we will utilize this flow diagram and present concrete algorithms.
+
+First, we can identify the common components, as the \emph{log-linear lines} connecting the spectra of $K_1=\gamma(t_0=0)$ and $K_2=\gamma(t_{N_t}=1)$. For convenience, we color these lines in TODO. TODO: in the corresponding insets, we show that these components are indeed common by .... Importantly, while the common components appear as log-linear lines, the remaining observation-specific components (as shown in the corresponding insets) exhibit nonlinear flow and they do not connect two (finite) values on the spectra of $\mathbf{K}_1$ or $\mathbf{K}_2$. 
+
+Second, we observe that the spectrum of $\mathbf{K}_1$ (resp. $\mathbf{K}_2$) consists of two types of components, which can be characterized by their distinct flow with respect to $t$. The first type of eigenvalues exhibits quick decay and corresponds to the observation-specific components. The second type exhibits a log-linear flow and corresponds to the common components. As a result, components related to the common variable can be distinguished and separated from components related to the observation-specific variables in each of observation separately (TODO). 
+
+Third, following the identification of the common and observation-specific components, we can discover the dominance of each component within each observation by considering the order, spread, and absolute value of the different components.
+TODO: for example, we observe that in Camera 1, the observation-specific Yoda is more dominant than the common Bulldog since TODO... Similarly, we observe that in Camera 2, the observation-specific Bunny is more dominant than the common Bulldog, since TODO.... In addition, we observe that the common to observation-specific ratio in Camera 1 is higher than the ratio in Camera 2 because TODO...
+
+The above information on the relative relation between the components can be naturally extended from the boundaries of the diagram at $t_0=0$ and $t_{N_t}=1$ to any point $t_j$. As a result, the eigenvalue flow diagram can serve as an unsupervised criterion for the identification of an optimal operator $\gamma(t^*)$, in which the common components are maximally emphasized.
+Particularly, in the toy problem, we observe that $t_j=0.5$ is the optimal point along the geodesic curve because that at this point the dominance of the bulldog-related component is the highest compared to the observable-specific components.
+We show that this enables us to propose an algorithm for common variable recovery, which outperforms alternating diffusion presented in \cite{lederman2018learning}. TODO: more details on the differences/benefits over AD?! (we show under which conditions the two algorithms are equal).
+
+As a consequence of the latter result, the relatedness of the two observations can be quantified by the extent of the common components. TODO: this may be related to widely used distances: KL, Stein, etc.
+
+We conclude this example with few important remarks.
+First, we note that the above results were deduced from the eigenvalues flow diagram, which is computed in a purely unsupervised manner. Second, we show analytically in Section \ref{sec:ProposedMethod} that the particular characterization of the spectra of the operators leading to the aforementioned results and insights, which was empirically spotted in this particular case, persist in the general case as well.  
+
+TODO: mention filtering and the span of the associated eigenvectors...
+
+\begin{figure}[t]
+	\centering
+	\includegraphics[scale=0.2]{FiguresPuppets/EvdWithSlices.png} 
+	\caption {A diagram of the flow of the spectra of $\gamma(t)$ with respect to $t$. The vertical axis denotes the position on the geodesic path $t_j \in [0,1]$, and the horizontal axis denotes the values of the $20$ leading eigenvalues of $\gamma(t_j)$ in logarithmic scale.}
+	\label{fig:Puppets_EVDiagrams_Slices}
+\end{figure}
+
+	
+%   \begin{figure}[H]\centering
+%		\includegraphics[scale=0.2]{FiguresPuppets/Puppets_EVDiagram_Linear.eps}
+%		\caption {The eigenvalues diagrams of $\ell(t)$.}
+%		\label{fig:Puppets_EVDiagrams_Linear}
+%	\end{figure}
+
+%	\begin{figure}[H]\centering
+%		\begin{tabular}{c}
+%			\hspace{-0.1in} \includegraphics[scale=0.25]{FiguresPuppets/Puppets_EVDiagramTracking.eps}
+%		\end{tabular}
+%		\caption {.}
+%		\label{fig:Puppets_EVDiagramTracking}
+%	\end{figure}
+	
+	
+	
+	%In this section we will present the proposed method. We begin by presenting theoretical analysis that will serve as the foundations for the proposed method. First for the simple case in which the kernels calculated from each view, $K_1$ and $K_2$, commute, and afterwards for the general case in which $K_1$ and $K_2$ are only partially commute.
+	%Finally we present the proposed algorithm that utilizes this theoretical foundations for the purpose of extracting the common source of variability.
+	
+	\subsection{Spectral analysis along the geodesic flow}\	
+	In this subsection we provide theoretical analysis that will serve as the foundations for the proposed method.
+	%	The general problem formulation describes a conditional independence of $Y$ and $Z$ given $X$, for analysis purposes we will further assume independence of $X$ $Y$ and $Z$.
+	We will rely on the analysis brought in \cite{singer2006spectral}. 
+	(TODO: from components to eigenfunctions?)
+	According to \cite[equation 3.11]{singer2006spectral}, the eigenfunctions from each view, for instance - $\mathbf{K}_1$, consists of outer products of eigenfunctions that depend on $X$, denoted by: $\phi^{(X)}_k(x), k=0,1,\ldots,d^{(X)}$, and eigenfunctions that depend on $Y$, denoted by: $\phi^{(Y)}_l(y), l=0,1,\ldots,d^{(Y)}$. I.e the eigenfunction of $\mathbf{K}_1$ holds the form:
+	$\phi^{(1)}_{(k,l)} = \phi^{(X)}_k(x) \cdot \phi^{(Y)}_l(y), k=0,1,\ldots,d^{(X)}, l=0,1,\ldots,d^{(Y)}$.
+	Since that the first eigenfunctions are trivial ($\phi^{(X)}_0(x)=\phi^{(Y}_0(y) = 1$) we can further separate the set of eigenfunctions of $\mathbf{K}_1$ into three sets:
+	\begin{itemize}
+		\item Eigenfunctions which are only function of $X$: $\phi^{(1)}_{(k,l=0)} = \phi^{(X)}_k(x)$, where $k=0,1,\ldots,d^{(X)}$, we will denote that set by $\Psi^{(X)}$.
+		\item Eigenfunctions which are only function of $Y$: $\phi^{(1)}_{(k=0,l)} = \phi^{(Y)}_k(y)$, where $l=0,1,\ldots,d^{(Y)}$,
+		we will denote that set by $\Psi^{(Y)}$.
+		\item Eigenfunctions which decompose of a mixture of $X$ and $Y$: $\phi^{(1)}_{(k,l)}(x,y) = \phi^{(X)}_k(x) \phi^{(Y)}_l(y)$, where $k=,1,\ldots,d^{(X)}$ and  $l=1,\ldots,d^{(Y)}$, we will denote that set by $\Psi^{(X,Y)}$.
+	\end{itemize}
+	Generalizing that observation for $\mathbf{K}_2$ as well we obtain the following sets: $\Psi^{(X)}$, $\Psi^{(Z)}$ and $\Psi^{(X,Z)}$.
+	Totally we end up with $5$ sets of components, which can broadly divide into $3$ groups:
+	\begin{itemize}
+		\item The set which is decomposed by our variable of interest only: $\Psi^{(X)}$, which is mutual to $\mathbf{K}_1$ and $\mathbf{K}_2$.
+		\item Sets which decompose of a mixture of components, some are of our source of interest $X$ and some are not ($Y$ or $Z$): $\Psi^{(X,Z)}$ and $\Psi^{(X,Y)}$.
+		\item Sets which decompose of single variables, which are view related: $\Psi^{(Z)}$ and $\Psi^{(Y)}$.
+	\end{itemize}
+
+	We will start with the analysis of eigenfunctions from the first group: $\Psi^{(X)}$, and prove that the related eigenfunctions are also eigenfunction of each point along the geodesic. Moreover, we will proof that the eigenvalues which are related to those eigenfunctions exhibit log-linear behavior with respect to $t$ - the point along the geodesic flow.
+	Later we will prove that eigenfunctions from the second and the third groups, vanish along the geodesic flow.
+	
+	\begin{theorem}
+		Consider $\phi \in \Psi^{(X)}$, i.e. $\phi$ is a mutual eigenfunction of $\mathbf{K}_1$ and $\mathbf{K}_2$, then $\phi$ is also an eigenfunction of the kernel obtained by each point along the geodesic $\gamma(t)$ with the corresponding eigenvalue:
+		\begin{equation}
+		\mu_{\gamma(t),i} = \mu_{\mathbf{K}_1,i}^{(1-t)} \cdot \mu_{\mathbf{K}_2,i}^{(t)} 
+		\label{eq:CommonEigenVals}
+		\end{equation}
+	\end{theorem}
+	
+	\begin{proof}
+		To prove this statement we will utilize the discrete operators: $\mathbf{K}_1$ and $\mathbf{K}_2$ and their discrete decomposition, which are known to converge to the continuous operators and its eigenfunction when $N \rightarrow \infty $. 
+		Let $v$ be the discrete eigenvector related to $\phi(x)$, and let $\lambda_1$ and  $\lambda_2$ denote its eigenvalues in $\mathbf{K}_1$ and $\mathbf{K}_2$. We will prove that $v$ is also an eigenvector of each point along the geodesic, with the following eigenvalues:  $\lambda_1^{(1-t)}\cdot \lambda_2^t$.
+		
+		Denote the quantity $\mathbf{K}_1^{-1/2}\mathbf{K}_2\mathbf{K}_1^{-1/2}$ by the term $C$. We note that $v$ is eigenvector of $C$ with the following eigenvalue: $(\lambda_1)^{-1}\cdot\lambda_2$, and therefore $v$ is also eigenvector of $C^t$ with the following eigenvalue: $\lambda_1^{(1-t)} \cdot \lambda_2^{t}$.
+		Substituting this results in the expression for the geodesic \ref{eq:geodesic}:
+		\begin{equation}
+		\begin{aligned}
+			\gamma(t) \cdot V &= \mathbf{K}_1^{1/2}C^t\mathbf{K}_1^{1/2} \cdot v =\\
+			&	\lambda_1^{1/2}\lambda_1^{-t}\cdot\lambda_2^t \lambda_a^{1/2}\cdot v= 
+			& \lambda_1^{(1-t)} \cdot \lambda_2^{t}\cdot v
+		\end{aligned}
+		\end{equation}
+	\end{proof}
+
+	It should be noted that the fact that the geodesic eigenvalues of mutual eigenvectors consists of a multiplication of the corresponding eigenvalues from each view is an important property. First, a direct results of this property is that all the kernels along the geodesic flow between two bi-stochastic matrices are also bi-stochastic. Second, as will be further demonstrated in \ref{subsec:Strips}, this fact is essential for recovering the true manifold of the common hidden variable, which is not the case when using the naive methods. Besides that, in the unsupervised case we will utilize \ref{eq:CommonEigenVals} in order to identify eigenvectors which are related to the common sources of variabilities.\\
+	
+	\begin{theorem}
+		Consider $\phi \notin \Psi^{(X)}$, then $\phi$ belongs to the null space of $\gamma(t)$, i.e: $||\gamma(t) \cdot \phi|| = 0$.
+ 	\end{theorem}
+ 
+	\begin{proof}
+		If $\phi \notin \Psi^{(X)}$, then $\phi$ may belong to the second or the third group of sets, i.e $\phi$ is in: $\Psi^{(Y)}$,$\Psi^{(X,Y)}$,$\Psi^{(Z)}$ or in $\Psi^{(X,Z)}$.
+		Without loss of generality, assume $\phi$ in $\Psi^{(Y)}$ or in $\Psi^{(X,Y)}$, the proof for the case in which $\phi$ in $\Psi^{(Z)}$ or in $\Psi^{(X,Z)}$ is symmetric.
+		We will utilize the fact that the geodesic can be described in the following form: $\gamma(t)=\tilde{\gamma}(1-t)$, where $\tilde{\gamma}(t)$ is the reverse geodesic path (starting from $\mathbf{K}_2$ and ending in $\mathbf{K}_1$). Therefore:
+		\begin{equation}
+		\label{eq:CSeq}
+		\begin{aligned}
+				||\gamma(t) \phi|| &= ||\tilde{\gamma}(1-t) \phi|| = || \mathbf{K}_2^{1/2}(\mathbf{K}_2^{-1/2}\mathbf{K}_1\mathbf{K}_2^{-1/2})^{1-t}\mathbf{K}_2^{1/2} \phi|| \\ &\leq  || \mathbf{K}_2^{1/2}(\mathbf{K}_2^{-1/2}\mathbf{K}_1\mathbf{K}_2^{-1/2})^{1-t} \phi || \cdot ||\mathbf{K}_2^{1/2}\phi|| \\
+		\end{aligned}
+		\end{equation}  
+	   We will focus on the last term: $||\mathbf{K}_2^{1/2}\phi||$ and prove that it equals to zero.
+	   In case where $\phi(y) \in \Psi^{(Y)}$ the proof is trivial:
+	   \begin{equation}
+	   \begin{aligned}
+	   \int_{\Omega_X}\int_{\Omega_Y}\int_{\Omega_Z} \mathbf{K}_2^{1/2}((x,z),(x',z')) \phi(y') d\mu(x')d\mu(y')d\mu(z') &= \\
+	   =\int_{\Omega_X}\int_{\Omega_Z} \mathbf{K}_2^{1/2}((x,z),(x',z'))d\mu(x')d\mu(z') \int_{\Omega_Y}\phi(y')d\mu(y') &= 0.
+	   \end{aligned}
+	   \end{equation}
+	   Where the last transition is due to the fact that the functions in $\Psi^{(Y)}$ are orthogonal to the constant function, meaning that the functions in $\Psi^{(Y)}$ obtain zero mean.
+	   In the case where $\phi(x,y) \in \Psi^{(X,Y)}$ convincing $\mathbf{K}_2^{1/2}\phi=0$ requires further analyis.
+	   Remind that the eigenfunctions of $\mathbf{K}_2$ are of the form: $\phi^{(2)}_{(k,l)}(x,z) = \phi^{(X)}_k(x) \cdot \phi^{(Z)}_l(z), k=0,1,\ldots,d^{(X)}, l=0,1,\ldots,d^{(Z)}$, then $\mathbf{K}_2$ can be expressed in the following way: 
+	   \begin{equation}
+	   \begin{aligned}
+	    \mathbf{K}_2 ((x,z),(x',z')) & = \sum_{k=0}^{d^{(X)}} \sum_{l=0}^{d^{(Z)}} \lambda^{(2)}_{(k,l)} \phi^{(2)}_{(k,l)}(x,z) \phi^{(2)*}_{(k,l)}(x',z') \\ 
+	    &= \sum_{k=1}^{d^{(X)}}\sum_{l=1}^{d^{(Z)}} \lambda^{(2)}_{(k,l)} \phi^{(2)}_{(k,l)}(x,z) \phi^{(2)*}_{(k,l)}(x',z') + \\ &  \sum_{k=0}^{d^{(X)}}\lambda^{(X)}_{k} \phi^{(X)}_k(x) \phi^{(X)*}_k(x')+\\ &  \sum_{l=0}^{d^{(Z)}}\lambda^{(Z)}_{l} \phi^{(Z)}_l(z) \phi^{(Z)*}_k(z')\\
+	    &= K^{(X)}(x,x')+ K^{(Z)}(z,z')+ K^{(X,Z)}((x,z),(x',z')).
+	   \end{aligned}
+	   \end{equation}
+	    Where $K^{(X)}(x,x')$ is composition of the eigenfunction of $\Psi^{(X)}$,  $K^{(Z)}(z,z')$ is composition of the eigenfunction of $\Psi^{(Z)}$ and $K^{(X,Z)}((x,z),(x',z'))$ is composition of the eigenfunctions of $\Psi^{(X,Z)}$. Using the same eigenfunctions decomposition we can also convince that:
+	    \begin{equation}
+	     {\mathbf{K}_2}^{1/2}={K^{(X)}}^{1/2}+ {K^{(Z)}}^{1/2}+ {K^{(X,Z)}}^{1/2}.
+	    \end{equation}
+	    Therefore:
+	    \begin{equation}
+	    \begin{aligned}
+	     {\mathbf{K}_2}^{1/2}\phi(x,y) =& {K^{(X)}}^{1/2}\phi(x,y)+ {K^{(Z)}}^{1/2}\phi(x,y)+ {K^{(X,Z)}}^{1/2}\phi(x,y) \\
+	    \end{aligned}
+	    \end{equation}
+	    The first leading terms in the previous expressions vanish due to the separability and the zeros mean property, therefore:
+	    \begin{equation}
+	    \begin{aligned}
+	    {\mathbf{K}_2}^{1/2} \phi(x,y) =& {K^{(X,Z)}}^{1/2}\phi(x,y) \\
+	    &=\int_{\Omega_X}\int_{\Omega_Y}\int_{\Omega_Z} \mathbf{K}_2^{(X,Z)}((x,z),(x',z')) \phi(x',y') d\mu(x')d\mu(y')d\mu(z') \\
+		&=\int_{\Omega_X}\int_{\Omega_Y}\int_{\Omega_Z} \sum_{k=1}^{d^{(X)}}\sum_{l=1}^{d^{(Z)}} \lambda^{(2)}_{(k,l)} \phi^{(2)}_{(k,l)}(x,z) \phi^{(2)*}_{(k,l)}(x',z') \phi(x',y') d\mu(x')d\mu(y')d\mu(z') \\
+		&=\int_{\Omega_X}\int_{\Omega_Y}\int_{\Omega_Z} \sum_{k=1}^{d^{(X)}}\sum_{l=1}^{d^{(Z)}} \lambda^{(2)}_{(k,l)} \phi^{(X)}_k(x)\phi^{(Z)}_l(z) \phi^{(X)*}_k(x')\phi^{(Z)*}_l(z') \phi(x',y') d\mu(x')d\mu(y')d\mu(z') \\
+		&= \sum_{k=1}^{d^{(X)}}\sum_{l=1}^{d^{(Z)}} \lambda^{(2)}_{(k,l)} \int_{\Omega_X}\int_{\Omega_Y}\int_{\Omega_Z}  \phi^{(X)}_k(x)\phi^{(Z)}_l(z) \phi^{(X)*}_k(x')\phi^{(Z)*}_l(z') \phi(x',y') d\mu(x')d\mu(y')d\mu(z') \\
+		&= \sum_{k=1}^{d^{(X)}}\sum_{l=1}^{d^{(Z)}} \lambda^{(2)}_{(k,l)} \int_{\Omega_X}\int_{\Omega_Y} \phi^{(X)}_k(x)\phi^{(Z)}_l(z) \phi^{(X)*}_k(x')\phi(x',y') d\mu(x')d\mu(y')  \cdot \int_{\Omega_Z}\phi^{(Z)*}_l(z')d\mu(z') = 0.
+	    \end{aligned}
+	    \end{equation}
+	\end{proof}
+	Where the last transition is due to the zero mean property of $\phi^{(Z)}_l(z)$ for $l>1$.
+	Plugging those results back in \ref{eq:CSeq} we can also deduce that $\phi(x,y)$ also belongs to the null space of $\gamma(t)$.\\
+
+	For conclusion, we proofed that the mutual eigenvectors exhibit a log-linear behavior along the geodesic, while that the non-mutual eigenvectors vanish as the kernels approach to the continuous operators (i.e. when the number of realizations $N$ increases and the chosen kernel scales decreases). It should be noted that the suppression of the non-mutual eigenvectors is unique to the geodesic flow, and does not hold in the case of the linear weighting in the tangent space.		
+	
+	\subsection{Component identification along the geodesic}
+	Tracking the eigenvalues trellis along the geodesic provides insights regarding the mutual information within the views, for instance - log-linear behavior of the eigenvalues indicates a mutual eigenvector. However, the mapping between the eigenvalues at adjacent points along the geodesic is unknown to us, in other words: at each point along the geodesic we can calculate the eigenvalues and eigenvectors, but the matching between those tuples at different points along the geodesic is unknown. In this subsection we propose a heuristic tracking method for components identification. This kind of identification may be beneficial for multiple uses such as feature selection or non linear filtrations, specifically in this paper we will utilize it in the next subsection for identifying the optimal point along the geodesic.
+	%
+	For the task of component identification along the geodesic multiple of tracking approaches can be taken, but actually our problem is less complicated than identifying all the components, since we are mainly interested in identifying the mutual components. Therefore we propose a computationally simple approach, which guarantees to identify correctly the eigenvalues' trellises of the mutual components, but may confuse between the eigenvalues' trellises of the view related components.
+	% 
+	We start by calculating the set of eigenvectors at $t=\frac{1}{2}$, we will denoted them by $\{V_i\}_{i=1}^N$. It should be noted that this choice for initialization is arbitrary, and motivated by prior belief that at the middle of the geodesic the dominance of the common eigenvalues is the highest. 
+	For each $t$ we calculate the corresponding eigenvalues related to each one of the eigenvectors $\{V_i\}_{i=1}^N$ by calculating the norm of their multiplication with $\gamma(t)$. The obtained eigenvalues will be denoted by $\{ \mu_{\gamma(t),i} \}_{i=1}^N$ such that $\mu_{\gamma(t),i}= \|\gamma(t)\cdot V_i \|$. The obtained set $\{ \mu_{\gamma(t),i} \}_{i=1}^N$ is already classified into components: $i=1,\ldots,N$. If $v$ is a mutual eigenvector, then it is an eigenvector at each point along the geodesic, specifically also in $t=1/2$, meaning that $v \in \{V_i\}_{i=1}^N$ and that there exists $i_0$ for which $v= V_{i_0}$, its eigenvalues trellises along the geodesic are obtained by $\mu_{t,i_0}$. The algorithm is summarized in \ref{alg:EigenvaluesTrellises}.
+	It should be noted that the obtained trellises along the geodesic of eigenvectors which are not mutual they may not match the real trellises, but for the purpose of finding the optimal point along the geodesic flow, identifying the trellises of the mutual eigenvectors only is sufficient. 
+	
+	\begin{algorithm}
+		%%\caption{.}	
+		\hspace*{\algorithmicindent} \textbf{Input}: The geodesic $\gamma(t)$ \\
+		\hspace*{\algorithmicindent} \textbf{Output}: Eigenvalues trellises identified with the mutual components:$\{ \mu_{\gamma(t),i} \}_{i=1}^N$ 
+		\begin{algorithmic}[1]
+			\State Calculate the set of eigenvectors at $t=\frac{1}{2}$, denoted by $\{V_i\}_{i=1}^N$.
+			\State For each $t$, calculate the corresponding eigenvalues related to each one of the eigenvectors $\{V_i\}_{i=1}^N$ by calculating the norm of their multiplication with $\gamma(t)$. The obtained eigenvalues will be denoted by $\{ \mu_{\gamma(t),i} \}_{i=1}^N$ such that $\mu_{\gamma(t),i}= \|\gamma(t)\cdot V_i \|$. 
+		\end{algorithmic}
+		\caption{Mutual components identification along the geodesic}
+		\label{alg:EigenvaluesTrellises}
+	\end{algorithm}	
+	 	
+	\subsection{SNR estimation and optimal point selection}
+	In this subsection we provide a method for finding the optimal point along the geodesic. We define the geometrical "SNR" along the geodesic as follows:
+	\begin{equation}
+	\label{eq:SNR}
+	\text{SNR}(t)=\frac{ \sum\limits_{i \in \mathcal{S}_{common}}{\mu_{\gamma(t),i}} }{\sum\limits_{i \notin \mathcal{S}_{common}}{\mu_{\gamma(t),i}}}
+	\end{equation}
+	where $\mathcal{S}_{common}$ denotes the set if indexes of the eigenvalues which are related to the common sources of variabilities.  
+	However, such a set is unknown in the unsupervised case. We propose utilizing \ref{eq:CommonEigenVals} in order to identify that set and to estimate \ref{eq:SNR}.	According to \ref{eq:CommonEigenVals} the logarithm of eigenvalues which are related to the common eigenvectors changes linearly along the geodesic, we utilize that property in order to identify those eigenvalues. We calculate the eigenvalues trellises according to the proposed algorithm for mutual components identification summarized in \ref{alg:EigenvaluesTrellises}. We then approximate the "belonging" each component to $\mathcal{S}_{common}$ according to a measure for its log-linear behavior along the geodesic. Specifically we use the difference between the arc-length of the logarithm of the eigenvalues trellis along the geodesic and the linear segment connecting the geodesic edges. The algorithm is described in \ref{alg:SNR}.
+	%
+	We denote the point with the maximal SNR by $tOptimal$. The kernels along the geodesic are positive definite and therefore possess real spectra, therefore we can calculate the low-dimensional representation from $\gamma(tOptimal)$. The algorithm's pipeline is summarized in \ref{alg:FullPipeline}.
+		
+		
+	
+	\begin{algorithm}
+		%%\caption{.}	
+		\hspace*{\algorithmicindent} \textbf{Input}: The geodesic $\gamma(t)$ \\
+		\hspace*{\algorithmicindent} \textbf{Output}: A "SNR" measure for each $t\in[0,1]$ 
+		\begin{algorithmic}[1]
+			\State Calculate the eigenvalues trellises: $\{ \mu_{\gamma(t),i} \}_{i=1}^N$ according to the proposed algorithm for mutual components identification summarized in \ref{alg:EigenvaluesTrellises}.
+			\State For each $i=1,2,\ldots,N$ calculate:
+			\begin{algsubstates}
+				\State the obtained arc-length of $log(\mu_{\gamma(t),i})$ in $t\in[0,1]$ using the following expression: $a_i(t) = \int_{0}^{1} \sqrt{1+\frac{d}{dt}log(\mu_{\gamma(t),i})} dt$.
+				\State the length of the linear segment connecting $log(\mu_{\gamma(0),i})$ with  $log(\mu_{\gamma(1),i})$:  $l_i(t) = \sqrt{1+\big( log(\mu_{\gamma(1),i})-log(\mu_{\gamma(0),i})\big)^2}$
+			\end{algsubstates}
+			\State For each $i=1,2,\ldots,N$ calculate $w_i=\frac{a(i)-l(i)}{a(i)}$. We should notice that  $0 \leqslant w_i \leqslant 1$, and that for $i \in \mathcal{S}_{common}$ then $a(i) \rightarrow l(i)$ and therfore $w_i \simeq 0$. Therefore we use it as a soft measure for the "mutuality" within the two views of each eigenvector.
+			\State The SNR measure at each $t$ is calculated using the following expression: $\text{SNR}(t)=\frac{\sum_{i=1}^{N} (1-w_i)\cdot \mu_{\gamma(t),i}  }{\sum_{i=1}^{N} w_i\cdot \mu_{\gamma(t),i} }$.
+		\end{algorithmic}
+		\caption{SNR assessment along the geodesic flow}
+		\label{alg:SNR}
+	\end{algorithm}	
+	
+	\begin{algorithm}
+		\hspace*{\algorithmicindent} \textbf{Input}: Aligned samples from two views: $\{(s^{(1)}_i)\}_{i=1}^N$ and $\{(s^{(2)}_i)\}_{i=1}^N$ \\
+		\hspace*{\algorithmicindent} \textbf{Output}: 	
+		\begin{minipage}[t]{10cm}%
+			\strut
+			1. A $d$-dimensional representation for the common source of variabilities:  $\{\Phi_i\}_{i=1}^N$ where $\Phi_i \in \mathbb{R}^{d}$.
+			
+			2. The optimal weighting of the views.
+			\strut 
+		\end{minipage}
+		\begin{algorithmic}[1]
+			\State For each view:
+			\begin{algsubstates}
+				\State Calculate its diffusion kernel according to \cite{coifman2017manifold}.
+				\State Perform row and column normalization using the proposed algorithm in \cite{knight2008sinkhorn}.
+			\end{algsubstates} 
+			\State Define a grid of $t$ on the segment $[0,1]$ and calculate the kernels along the geodesic flow using equation \ref{eq:geodesic}.
+			\State Using \ref{alg:SNR} calculate the "SNR" measure for each point on the grid.
+			\State The optimal weighting of the views, denoted by $tOptimal$, is given by $tOptimal=\underset{t}{\operatorname{argmax}}{\text{ SNR}(t)}$. 
+			\State Calculate $\{\Phi_i\}_{i=1}^N$ using the embedding at $\gamma(tOptimal)$.
+		\end{algorithmic}
+		\caption{Algorithm's pipeline}
+		\label{alg:FullPipeline}
+	\end{algorithm}
+	%The analysis of eigenvectors which are view related is still uncovered theoretically but will be covered empirically within this paper.
+	
+	\subsection{Relationship to AD}
+	The proposed algorithm has a strong connection to AD when the obtained kernels: $\mathbf{K}_1$ and $\mathbf{K}_2$ commute.
+	First we should notice that the geometric mean, which is obtained by calculating $\gamma(\frac{1}{2})$ yields the usual form of alternating diffusion operator. 
+	The second observation gives some intuition regarding the meaning of the kernels along the geodesic. Consider $0\leq t \leq 1 \in \mathbb{Q}$, denoted by the following form $t=\frac{s_2}{s_1+s_2}$. According to \ref{eq:CommonEigenVals}, the geodesic eigenvalues are:
+	\begin{equation}
+	\mu_{\gamma(t),i} = \mu_{\mathbf{K}_1,i}^{(1-t)} \cdot \mu_{\mathbf{K}_2,i}^{(t)} = \mu_{\mathbf{K}_1,i}^{\frac{s1}{s_1+s_2}} \cdot \mu_{\mathbf{K}_2,i}^{\frac{s2}{s_1+s_2}}
+	\end{equation}
+	Remind that the eigenvalues of the discrete diffusion operator are related to the continuous operator by:
+	\begin{eqnarray*}
+		\mu_{K,i}=  exp\bigg( \frac{-\epsilon ^2}{4}\widetilde{\mu}_{K,i}\bigg)
+	\end{eqnarray*}
+	where, ${\tilde{\mu}}_{\mathbf{K}_1,i}$ are the eigenvalues of the continuous diffusion operator. Then:
+	\begin{equation}
+	\mu_{\gamma(t),i} = exp\bigg( \frac{-s_1\bigg(\frac{\epsilon_1}{\sqrt{s_1+s_2}}\bigg)^2}{4}\widetilde{\mu}_{\mathbf{K}_1,i} + \frac{-s_2\bigg(\frac{\epsilon_2}{\sqrt{s_1+s_2}}\bigg)^2}{4}\widetilde{\mu}_{\mathbf{K}_2,i}\bigg)
+	\end{equation}
+	I.e. the kernel $\gamma(t)$ is equivalent to the kernel that would have been obtained by performing alternations which consists of $s_1$ propagations using $\tilde{\mathbf{K}_1}$ and $s_2$ propagations using $\tilde{\mathbf{K}_2}$: $\gamma(t)=\tilde{\mathbf{K}_1}^{s_1} \tilde{\mathbf{K}_2}^{s_2} $. Where $\tilde{\mathbf{K}_1}$ and $\tilde{\mathbf{K}_2}$ are the corresponding kernels of the first and second views, but with the following scales: $\tilde{\epsilon_1}=\frac{\epsilon_1}{\sqrt{s_1+s_2}}$, $\tilde{\epsilon_2}=\frac{\epsilon_2}{\sqrt{s_1+s_2}}$.
+	
+	
+	TODO: insert?
+	Consider $\mathbf{K}_1,\mathbf{K}_2 \in \mathcal{P}(N)$, and assume $[\mathbf{K}_1,\mathbf{K}_2]=0$, then each point along the geodesic $\gamma(t)$ shares the same eigenvectors as $\mathbf{K}_1$ and $\mathbf{K}_2$ with the corresponding eigenvalues that holds the form: 
+	\begin{equation}
+	\mu_{\gamma(t),i} = \mu_{\mathbf{K}_1,i}^{(1-t)} \cdot \mu_{\mathbf{K}_2,i}^{(t)} 
+	\label{eq:CommonEigenVals2}
+	\end{equation}
+	where $i=1,2,3,...,N$ and $ \{ \mu_{\mathbf{K}_1,i}, \mu_{\mathbf{K}_2,i} \}_{i=1}^N$ are the corresponding eigenvalues of $\mathbf{K}_1$ and $\mathbf{K}_2$ respectively.\\
+	\textbf{Proof}:
+	If $[\mathbf{K}_1,\mathbf{K}_2]=0$ then they both has the the same factorization, i.e. we can write:
+	\begin{eqnarray*}
+		\mathbf{K}_1 = U\cdot S_1 \cdot U^T \\ 
+		\mathbf{K}_2 = U\cdot S_2 \cdot U^T \\ 
+	\end{eqnarray*}
+	Therefore:
+	\begin{equation}
+	\begin{aligned}
+	\gamma(t)= & \mathbf{K}_1^{1/2}\cdot( \mathbf{K}_1^{-1/2} \cdot \mathbf{K}_2 \cdot \mathbf{K}_1^{-1/2})^t \cdot \mathbf{K}_1^{1/2} =\\
+	& U S_1^{1/2}  U^T \cdot(U S_1^{-1/2}  U^T  U S_2^{1/2}  U^T  U S_1^{-1/2}  U^T )^t \cdot U S_1^{1/2}  U^T = \\
+	& U\cdot S_1^{(1-t)} \cdot S_2^{t}\cdot U^T.
+	\end{aligned}
+	\end{equation}
+	
+	
+	
+	
+	\section{Synthetic data demonstrations}
+	\label{sec:SynthData}
+	In this section we provide several synthetic toy examples that will demonstrate the proposed analysis. Using those toy examples we will be able to validate our mathematical analysis brought in \ref{sec:RiemannianIntro}.
+	
+	\subsection{Strips - case study}
+	\label{subsec:Strips}
+	We use the strips as a case study since that in this case the spectrum is analytically known and easy to be interpreted.
+	
+	We will start by two examples in which $\mathbf{K}_1$ and $\mathbf{K}_2$ commute, and will be able to demonstrate the mentioned properties of the geodesic in \ref{eq:CommonEigenVals}:
+	\begin{itemize}
+		\item In the first example  only one hidden variables exists, and being observed within the two views. 
+		\item In the second example two hidden variables exists, and being observed within the two views. 
+	\end{itemize}
+	In the last case we consider a settings that matches this paper goal. I.e. three hidden variables, where only one is being observed by the two views and rest are view-related. In this case, only the eigenvectors which are related to the common hidden variable are mutual, and therefore $\mathbf{K}_1$ and $\mathbf{K}_2$ are only partially commute.
+	
+	\subsubsection{Single strip}
+	\label{subsubsec:1DStrips}
+	In this case we consider only one, not so hidden, uniform random variable: $\Theta \sim  Uniform[-\frac{1}{2},-\frac{1}{2}]$. This variable is being observed through two views, each one holds a different scale:
+	\begin{eqnarray*}
+		\label{eq:1DStripData}
+		x^{(v)}_i=L^{(v)} \cdot \Theta_i, v=1,2.
+	\end{eqnarray*}
+	where $L^{(1)}=1$ and $L^{(2)}=5$. According to \cite{dsilva2018parsimonious}, the eigenvalues of the diffusion operator from each view are given by:
+	\begin{eqnarray*}
+		\label{eq:1DStripContEigenvasl}
+		\widetilde{\mu}_{(v),k}= \bigg( \frac{k\pi}{L^{(v)}} \bigg)^2
+	\end{eqnarray*}
+	for $k=0,1,2,...$ and the corresponding eigenfunctions are: 
+	\begin{eqnarray*}
+		\label{eq:1DStripContEigenfun}
+		\widetilde{\phi}_{(v),k}=  cos\bigg( \frac{k\pi}{L^{(v)}} x^{(v)} \bigg) = cos\bigg( k\pi  \Theta\bigg)
+	\end{eqnarray*}
+	And the discrete eigenvalues can be derived from the continuous operator by:
+	\begin{eqnarray*}
+		\label{eq:1DStripContEigenfun}
+		\mu_{(v),k}=  exp\bigg( \frac{-\epsilon ^2}{4}\widetilde{\mu}_{(v),k}\bigg)
+	\end{eqnarray*}
+	where $\epsilon$ is the chosen kernel scale. For this simulation the same kernel scale is chosen for both views. Noting that the views share the same set of eigenvectors, we can conclude that $K_1$ and $K_2$ commute and apply \ref{eq:CommonEigenVals} in order to obtain a formula for the eigenvalues along the geodeic:
+	\begin{eqnarray*}
+		\label{eq:1DStripCommonEigenVals}
+		\mu_{\gamma(t),i} =  exp\bigg( \frac{-\epsilon ^2}{4}\cdot \big((1-t)\widetilde{\mu}_{(1),i}+t\widetilde{\mu}_{(2),i}\big) \bigg) = exp\bigg( \frac{-\epsilon ^2}{4}\cdot \bigg( \frac{i\pi}{L^{(\gamma(t))}} \bigg)^2 \bigg).
+	\end{eqnarray*}
+	where $L^{(\gamma(t))}$ is defined as following:
+	\begin{eqnarray*}
+		\label{eq:EffectiveLength}
+		L^{(\gamma(t))} = \sqrt{ \frac{L^{(1)}L^{(2)}}{(1-t)L^{(1)}+tL^{(2)}} }
+	\end{eqnarray*}
+	%
+	It should be noted that the obtained spectrum at $\gamma(t)$ is corresponding to the spectrum of a strip with an effective length of $L^{(\gamma(t))}$.
+	It should be noted that this result is not trivial, and this is a direct result of using the geodesic curve. For instance, if we would choose to use the liner mean: $\ell(t)=(1-t)K_1+tK_2$, the obtained eigenvalues are: 
+	\begin{eqnarray*}
+		\label{eq:}
+		\mu_{\ell(t),i} = (1-t) \cdot exp\bigg( \frac{-\epsilon ^2}{4}\widetilde{\mu}_{(1),i}\bigg) + t \cdot exp\bigg( \frac{-\epsilon ^2}{4}\widetilde{\mu}_{(2),i}\bigg)
+	\end{eqnarray*}
+	Which generally can not be expressed in a strip-corresponding eigenvalues form: $\exp(-c \cdot k^2)$, where $k$ is the eigenvalue index and $c$ is a certain constant corresponding the strip scale.
+	TODO: Prove that the only case is here $L^{(1)}$ = $L^{(2)}$.
+	
+	%In figure \ref{fig:1DStrip_Data} we can observe the raw data from each view.
+	%\begin{figure}[H]\centering
+	%	\begin{tabular}{cc}
+	%		\hspace{-1.2in} \includegraphics[scale=0.2]{FiguresSynth/1DStrip_Data_view1.eps} &
+	%		\includegraphics[scale=0.2]{FiguresSynth/1DStrip_Data_view2.eps}
+	%	\end{tabular}
+	%	\caption {}
+	%	\label{fig:1DStrip_Data}
+	%\end{figure}
+	
+	We run over a grid of $t$ within the interval $[0,1]$, for each $t$ we calculate the eigenvalues of $\ell(t)$ and $\gamma(t)$. The obtained results are depicted in \ref{fig:1DStrip_EVDiagrams}.
+	
+	\begin{figure}[H]\centering
+		\begin{tabular}{cc}
+			\hspace{-1.2in} \includegraphics[scale=0.2]{FiguresSynth/1DStrip_EVDiagram_Geodesic.eps} &
+			\includegraphics[scale=0.2]{FiguresSynth/1DStrip_EVDiagram_Linear.eps}
+		\end{tabular}
+		\caption {The eigenvalues diagrams of $\gamma(t)$ is a scatter plot describing the eigenvalues of $\gamma(t)$ as function of $t$. The vertical axis spans from $t=0$ to $t=1$ and the horizontal axis describes the logarithm of the $10$ leading eigenvalues at each point along the geodesic. I.e, for each $t$ on a grid that spans from $t=0$ to $t=1$ we plot $10$ dots in $\big(t,-log(\mu_{\gamma(t),i})\big), i=1,\ldots,10$. The eigenvalues diagrams on the left side is related to $\gamma(t)$ and the eigenvalues diagrams on the right side is related to $\ell(t)$.}
+		\label{fig:1DStrip_EVDiagrams}
+	\end{figure}
+	
+	For each $t$ we calculate the logarithm of the obtained eigenvalues and perform square fit of the form $c \cdot k^2$ where $k=1,1,2,\ldots,9$. An illustration for the obtained results at $t=0.4$ is given in \ref{fig:1DStrip_FitDemos}. The resulting NMSE for each $t$ is depicted in \ref{fig:1DStrip_SquareFitNMSE}. 
+	%
+	\begin{figure}[H]\centering
+		\begin{tabular}{cc}
+			\hspace{-1.2in} \includegraphics[scale=0.2]{FiguresSynth/1DStrip_FitDemo_Geodesic.eps} &
+			\includegraphics[scale=0.2]{FiguresSynth/1DStrip_FitDemo_Linear.eps}
+		\end{tabular}
+		\caption{Fitting demonstration of the obtained logarithm of the eigenvalues at $t=0.4$ to a parabolic form. The red line is the polynomial fit and the blue dots represent the logarithm of the $10$ leading eigenvalues. On the left side is the fitting demonstration of the eigenvalues of $\gamma(0.4)$ and on the right side is the fitting demonstration of the eigenvalues of $\ell(0.4)$}
+		\label{fig:1DStrip_FitDemos}
+	\end{figure}
+	%
+	\begin{figure}[H]\centering
+		\begin{tabular}{c}
+			\hspace{-0.1in} \includegraphics[scale=0.25]{FiguresSynth/1DStrip_SquareFitNMSE.eps}
+		\end{tabular}
+		\caption{The NMSE between the polynomial fit and the obtained eigenvalues of $\gamma(t)$ (red) and $\ell(t)$ (blue).}
+		\label{fig:1DStrip_SquareFitNMSE}
+	\end{figure}
+	%
+	The conclusion from figures \ref{fig:1DStrip_FitDemos} and \ref{fig:1DStrip_SquareFitNMSE} is that the spectrum of $\ell(t)$ does not corresponds to a spectrum describing a 1D strip, unlike the spectrum obtained from $\gamma(t)$ that corresponds to a 1D strip with length $L^{(\gamma(t))}$.
+	%
+	Based on the fitting coefficients that we derived for each $t$, we can calculate the corresponding effective strip length, the obtained results are depicted in \ref{fig:1DStrip_SquareFitNMSE}.
+	%
+	\begin{figure}[H]\centering
+		\begin{tabular}{c}
+			\hspace{-0.1in} \includegraphics[scale=0.25]{FiguresSynth/1DStrip_EffectiveLength.eps}
+		\end{tabular}
+		\caption{The effective strip length. Empiric - according to calculated fitting coefficient (ref and blue lines), and analytically according to \ref{eq:EffectiveLength} (orange line).}
+		\label{fig:1DStrip_SquareFitNMSE}
+	\end{figure}
+	%
+	In order to demonstrate that the eigenvectors are mutual along the geodesic we perform the following experiment.  We calculate the $10$ first eigenvectors at $\gamma(t=0)$, denoted by $\{V(t=0)_i\}_{i=1}^{i=10}$. For each $t$ we calculate $\gamma(t)$ and multiply it with each one of the eigenvectors calculated at $t=0$: $\{\gamma(t) \cdot V(t=0)_i\}_{i=1}^{i=10}$, we then calculate the obtained gain of each one of the multiplication $\{ \| \gamma(t) \cdot V(t=0)_i \| \}_{i=1}^{i=10}$, this values will be denoted as the tracked eigenvalues. We repeat the same procedure once again but this time we start the tracking from $t=1$. The results are depicted in \ref{fig:1DStrip_EVDiagramTracking}.
+	%
+	\begin{figure}[H]\centering
+		\begin{tabular}{c}
+			\hspace{-0.1in} \includegraphics[scale=0.25]{FiguresSynth/1DStrip_EVDiagramTracking.eps}
+		\end{tabular}
+		\caption{Comparison between the tracked eigenvalues for two different initializations with the real eigenvalues along the geodesic. The tracked eigenvalues based on eigenvectors initialization at $t=0$ are marked by circles,and the eigenvalues based on eigenvectors initialization at $t=1$ are marked by squares. The real eigenvalues along the geodesic are marked by crosses. The colors indicate the index of the eigenvectors.}
+		\label{fig:1DStrip_EVDiagramTracking}
+	\end{figure}
+	%
+	
+	\subsubsection{Two strips}
+	\label{subsubsec:2DStrips}
+	This example is an extension of the previous one. In this example each view is composed of $2$ hidden variables $\Theta,\Omega$ that forms a strip. The samples from each view are described in the following expression:
+	\begin{eqnarray*}
+		\label{eq:2DStripData}
+		&x^{(v)}_i=L^{(v)}_\Theta \cdot \Theta_i \\ 
+		&y^{(v)}_i=L^{(v)}_\Omega \cdot \Omega_i \\ 
+		&v=1,2.
+	\end{eqnarray*}
+	where in the first view $\Theta$ is the dominant component: $L^{(1)}_\Theta=8$ and $L^{(1)}_\Omega=e$, and in the second view $\Omega$ is the dominant: $L^{(2)}_\Theta=8$ and $L^{(2)}_\Omega=6\pi$. The raw data-points from each view are presented in \ref{fig:2DStrip_Data_views}.
+	\begin{figure}[H]\centering
+		\begin{tabular}{cc}
+			\hspace{-1.2in} \includegraphics[scale=0.2]{FiguresSynth/2DStrip_Data_view1.eps} &
+			\includegraphics[scale=0.2]{FiguresSynth/2DStrip_Data_view2.eps}
+		\end{tabular}
+		\caption {Raw datapoints acquired from the first view (left) and from the second view (right).}
+		\label{fig:2DStrip_Data_views}
+	\end{figure}
+	%
+	In this case, the eigenvalues and eigenfunctions are:
+	\begin{eqnarray*}
+		\label{eq:1DStripContEigenvasl}
+		\widetilde{\mu}_{(v),(i,j)}= \bigg( \frac{i\pi}{L^{(v)}_\Theta} \bigg)^2 + \bigg( \frac{j\pi}{L^{(v)}_\Omega} \bigg)^2
+	\end{eqnarray*}
+	for $i,j=0,1,2,...$ and the corresponding eigenfunctions are: 
+	\begin{eqnarray*}
+		\label{eq:1DStripContEigenfun}
+		\widetilde{\phi}_{(v),(i,j)}=  cos\bigg( i\pi\Theta \bigg) cos\bigg( j\pi\Omega\bigg)
+	\end{eqnarray*}
+	%
+	The obtained eigenvalues of $\gamma(t)$ and $\ell(t)$ are depicted in \ref{fig:2DStrip_EVDiagrams}.
+	\begin{figure}[H]\centering
+		\begin{tabular}{cc}
+			\hspace{-1.2in} \includegraphics[scale=0.2]{FiguresSynth/2DStrip_EVDiagram_Geodesic.eps} &
+			\includegraphics[scale=0.2]{FiguresSynth/2DStrip_EVDiagram_Linear.eps}
+		\end{tabular}
+		\caption {Eigenvalues diagrams, for $\gamma(t)$ (left) and for $\ell(t)$ (right).}
+		\label{fig:2DStrip_EVDiagrams}
+	\end{figure}
+	%
+	The tracking diagram is depicted in \ref{fig:2DStrip_EVDiagramTracking}.
+	It should be noted that the tracked eigenvalues are slightly different than the real eigenvalues along the geodesic $\gamma(t)$, specially for small eigenvalues. The cause for that phenomenon is numerical errors.
+	%
+	\begin{figure}[H]\centering
+		\begin{tabular}{c}
+			\hspace{-0.1in} \includegraphics[scale=0.25]{FiguresSynth/2DStrip_EVDiagramTracking.eps}
+		\end{tabular}
+		\caption {Comparison between the tracked eigenvalues for two different initializations with the real eigenvalues along the geodesic.}
+		\label{fig:2DStrip_EVDiagramTracking}
+	\end{figure}
+	
+	
+	\subsubsection{Three strips}
+	\label{subsubsec:3DStrips}
+	%
+	In this case we consider three hidden variables: $\Theta, N_1$ and $N_2$ which are being observed within the two views in the following manner:
+	\begin{eqnarray*}
+		\label{eq:2DStripData}
+		x^{(1)}_i=L^{(1)}_\Theta \cdot \Theta_i  &;& x^{(2)}_i=L^{(2)}_\Theta \cdot \Theta_i\\ 
+		y^{(1)}_i=L^{(1)}_{N_1} \cdot {N_1}_i &;& y^{(2)}_i=L^{(2)}_{N_2} \cdot {N_2}_i 
+	\end{eqnarray*}
+	This settings corresponds the settings in the problem formulation. I.e. one hidden variable which is being observed within two views where each is also influenced by other view-related variable - $N_1$ and $N_2$. Our goal is to obtain a representation for $\Theta$ and to eliminate the effects that induced by the existence of $N_1$ and $N_2$.
+	%
+	The previous cases we have considered in \ref{subsubsec:1DStrips} and in \ref{subsubsec:2DStrips} were fully covered by the mathematical analysis in section \ref{sec:ProposedMethod} since the given kernels, $K_1$ and $K_2$ shared all their eigenvectors. This section extends from the analysis done in section \ref{sec:ProposedMethod} since that besides the shared eigenvectors which are related to $\Theta$, each kernel posses additional eigenvectors which are not mutual with the second kernel. Although we still don't have the theoretical justification we claim that those eigenvectors are being suppressed fast along the geodesic. The goal of this section is to bring some empiric justifications that will demonstrate this claim.
+	%
+	We describe three experiments, that differs by the SNR induced by the view-related variables $N_1$ and $N_2$. Those setting are determined by the choice of the strips scales: $L^{(1)}_\Theta$ vs $L^{(1)}_{N_1}$ and $L^{(2)}_\Theta$ vs $L^{(2)}_{N_2}$.
+	
+	\paragraph{High SNR}
+	In this case we consider easy settings in which $\Theta$ in each view is as dominant as the disturbances (the view-related sources of variabilities - $N_1$ and $N_2$). Specifically we choose: $L^{(1)}_\Theta=2 ,L^{(2)}_\Theta=2$ vs $L^{(1)}_{N1}=2,L^{(2)}_{N2}=2$. The raw data from each view is presented in \ref{fig:3DStrip_HighSNR_Data_views}.
+	%
+	\begin{figure}[H]\centering
+		\begin{tabular}{cc}
+			\hspace{-1.2in} \includegraphics[scale=0.2]{FiguresSynth/3DStrip_HighSNR_Data_view1.eps} &
+			\includegraphics[scale=0.2]{FiguresSynth/3DStrip_HighSNR_Data_view2.eps}
+		\end{tabular}
+		\caption {Raw datapoints acquired from the first view (left) and from the second view (right).}
+		\label{fig:3DStrip_HighSNR_Data_views}
+	\end{figure}
+	%
+	The eigenvalues diagram is depicted in \ref{fig:3DStrip_HighSNR_EVDiagram}.
+	%
+	\begin{figure}[H]\centering
+		\begin{tabular}{c}
+			\hspace{-0.1in} \includegraphics[scale=0.25]{FiguresSynth/3DStrip_HighSNR_EVDiagram_Geodesic.eps}
+		\end{tabular}
+		\caption {Eigenvalues diagram of $\gamma(t)$.}
+		\label{fig:3DStrip_HighSNR_EVDiagram}
+	\end{figure}
+	%
+	The tracking diagram based on initialization at $t=0.5$ is depicted in the left figure in \ref{fig:3DStrip_HighSNR_EVDiagramTracking}. Based on this diagram we can calculate the unsupervised measure for the SNR described in \ref{alg:SNR}. 
+	%Since that "mutual eigenvectors" exhibits a linear behavior of their eigenvalues in the eigenvalues diagrams we can estimate which eigenvalues at each point is related to the common variable of interest. Specifically - for each tracked eigenvlues we calculate the difference between the geodesic arc length and the length of the linear line stretched from $t=0$ and $t=1$, the eigenvector with smallest difference is defined as the "common eigenvector". Based on this identification we can derive a measure for the SNR along the geodesic. At each point  we calculate the eigenvalue corresponding the "common eigenvector" and calculate it's ratio compared to the rest of the eigenvalues at that point along the geodesic. The identified "common eigenvector" is marked in left figure in \ref{fig:3DStrip_HighSNR_EVDiagramTracking}. 
+	The obtained SNR measure is depicted in the right figure in \ref{fig:3DStrip_HighSNR_EVDiagramTracking}. As can be seen, due to the choice of symmetric views, the highest SNR measure is around $t=0.5$.
+	
+	\begin{figure}[H]\centering
+		\begin{tabular}{cc}
+			\hspace{-1.2in} \includegraphics[scale=0.2]{FiguresSynth/3DStrip_HighSNR_EVDiagramTracking.eps} &
+			\includegraphics[scale=0.2]{FiguresSynth/3DStrip_HighSNR_SNR.eps}
+		\end{tabular}
+		\caption {On the left side we can see the tracked eigenvalues diagram based on the eigenvectors of $\gamma(0.5)$. On the right side we can see the obtained SNR measure based on the tracked eigenvalues diagram.}
+		\label{fig:3DStrip_HighSNR_EVDiagramTracking}
+	\end{figure}
+	
+	To illustrate the importance of a proper choice for point along the geodesic we demonstrate the diffusion pattern in several points along the geodesic: $t=0,t=0.3,t=tOptimal$ and $t=1$, while that in this case $tOptimal=0.5$. The diffusion patterns are presented in \ref{fig:3DStrip_HighSNR_Diffs}.
+	
+	\begin{figure}[H]\centering
+		\begin{tabular}{cc}
+			\hspace{-1.2in} \includegraphics[scale=0.1]{FiguresSynth/3DStrip_HighSNR_View1_t=0.eps} &
+			\includegraphics[scale=0.1]{FiguresSynth/3DStrip_HighSNR_View2_t=0.eps} \\
+			\hspace{-1.2in} (a) & (b) \\
+			\hspace{-1.2in} \includegraphics[scale=0.1]{FiguresSynth/3DStrip_HighSNR_View1_t=02.eps} &
+			\includegraphics[scale=0.1]{FiguresSynth/3DStrip_HighSNR_View2_t=02.eps} \\
+			\hspace{-1.2in} (c) & (d) \\
+			\hspace{-1.2in} \includegraphics[scale=0.1]{FiguresSynth/3DStrip_HighSNR_View1_t=tOptimal.eps} &
+			\includegraphics[scale=0.1]{FiguresSynth/3DStrip_HighSNR_View2_t=tOptimal.eps} \\ 
+			\hspace{-1.2in} (e) & (f) \\
+			\hspace{-1.2in} \includegraphics[scale=0.1]{FiguresSynth/3DStrip_HighSNR_View1_t=1.eps} &
+			\includegraphics[scale=0.1]{FiguresSynth/3DStrip_HighSNR_View2_t=1.eps} \\
+			\hspace{-1.2in} (g) & (h) \\
+		\end{tabular}
+		\caption {Diffusion patterns for several points along the geodesic: $t=0,0.3,tOptimal,1$. The diffusion pattern of $\gamma(t_0)$ is a heat-map which is obtained by single step evaluation of $\gamma(t_0)$ on a one-hot state vector initialization. Each row describes the diffusion pattern for different choice of $t_0$. On the left side the diffusion pattern is used to color the raw datapoints acquired by the first view and on the right it is used to color the raw datapoints acquired by the second view. The first row corresponds to the diffusion pattern of $K_1$ ($\gamma(0)$), the second and the third rows correspond to $\gamma(0.3)$ and $\gamma(tOptimal)$ and the last row corresponds to the diffusion pattern of $K_2$ ($\gamma(1)$).}
+		\label{fig:3DStrip_HighSNR_Diffs}
+	\end{figure}
+	
+	\paragraph{Moderate SNR}
+	In this case we choose: $L^{(1)}_\Theta=2 ,L^{(2)}_\Theta=2$ vs $L^{(1)}_{N1}=8,L^{(2)}_{N2}=4$.
+	I.e. $\Theta$ is not the most dominant source of variability in each one of the views. In addition, the views are not symmetric ands the noise level in the second view is lower compared to the first view. The raw data from each view is presented in \ref{fig:3DStrip_ModerateSNR_Data_views}.
+	%
+	\begin{figure}[H]\centering
+		\begin{tabular}{cc}
+			\hspace{-1.2in} \includegraphics[scale=0.2]{FiguresSynth/3DStrip_ModerateSNR_Data_view1.eps} &
+			\includegraphics[scale=0.2]{FiguresSynth/3DStrip_ModerateSNR_Data_view2.eps}
+		\end{tabular}
+		\caption {Raw datapoints acquired from the first view (left) and from the second view (right).}
+		\label{fig:3DStrip_ModerateSNR_Data_views}
+	\end{figure}
+	%
+	The eigenvalues diagram is depicted in \ref{fig:3DStrip_ModerateSNR_EVDiagram}.
+	%
+	\begin{figure}[H]\centering
+		\begin{tabular}{c}
+			\hspace{-0.1in} \includegraphics[scale=0.25]{FiguresSynth/3DStrip_ModerateSNR_EVDiagram_Geodesic.eps}
+		\end{tabular}
+		\caption {Eigenvalues diagram of $\gamma(t)$.}
+		\label{fig:3DStrip_ModerateSNR_EVDiagram}
+	\end{figure}
+	%
+	The obtained SNR measure is depicted in the right figure in \ref{fig:3DStrip_ModerateSNR_EVDiagramTracking}. As can be seen in \ref{fig:3DStrip_ModerateSNR_EVDiagramTracking} the optimal point is no longer in $t=0.5$ and moved towards the second view.
+	%
+	\begin{figure}[H]\centering
+		\begin{tabular}{cc}
+			\hspace{-1.2in} \includegraphics[scale=0.2]{FiguresSynth/3DStrip_ModerateSNR_EVDiagramTracking.eps} &
+			\includegraphics[scale=0.2]{FiguresSynth/3DStrip_ModerateSNR_SNR.eps}
+		\end{tabular}
+		\caption {The tracked eigenvalues diagram of $\gamma(t)$ (on the left side) with the corresponding SNR measure (on the right side).}
+		\label{fig:3DStrip_ModerateSNR_EVDiagramTracking}
+	\end{figure}
+	%
+	The diffusion pattern in  $t=0,t=0.3,t=tOptimal$ and $t=1$ are depicted in \ref{fig:3DStrip_ModerateSNR_Diffs}. It easy to notice the superior of the optimal point according the proposed unsupervised SNR measure.
+	%
+	\begin{figure}[H]\centering
+		\begin{tabular}{cc}
+			\hspace{-1.2in} \includegraphics[scale=0.1]{FiguresSynth/3DStrip_ModerateSNR_View1_t=0.eps} &
+			\includegraphics[scale=0.1]{FiguresSynth/3DStrip_ModerateSNR_View2_t=0.eps} \\
+			\hspace{-1.2in} (a) & (b) \\
+			\hspace{-1.2in} \includegraphics[scale=0.1]{FiguresSynth/3DStrip_ModerateSNR_View1_t=02.eps} &
+			\includegraphics[scale=0.1]{FiguresSynth/3DStrip_ModerateSNR_View2_t=02.eps} \\
+			\hspace{-1.2in} (c) & (d) \\
+			\hspace{-1.2in} \includegraphics[scale=0.1]{FiguresSynth/3DStrip_ModerateSNR_View1_t=tOptimal.eps} &
+			\includegraphics[scale=0.1]{FiguresSynth/3DStrip_ModerateSNR_View2_t=tOptimal.eps} \\ 
+			\hspace{-1.2in} (e) & (f) \\
+			\hspace{-1.2in} \includegraphics[scale=0.1]{FiguresSynth/3DStrip_ModerateSNR_View1_t=1.eps} &
+			\includegraphics[scale=0.1]{FiguresSynth/3DStrip_ModerateSNR_View2_t=1.eps} \\
+			\hspace{-1.2in} (g) & (h) \\
+		\end{tabular}
+		\caption {Diffusion patterns for several points along the geodesic. The first row corresponds to the diffusion pattern of $K_1$ ($\gamma(0)$), the second and the third rows correspond to $\gamma(0.3)$ and $\gamma(tOptimal)$ and the last row corresponds to the diffusion pattern of $K_2$ ($\gamma(1)$).  On the left side the diffusion pattern is used to color the raw datapoints acquired by the first view and on the right it is used to color the raw datapoints acquired by the second view.}
+		\label{fig:3DStrip_ModerateSNR_Diffs}
+	\end{figure}
+	
+	\paragraph{Low SNR}
+	%
+	In this case we choose: $L^{(1)}_\Theta=2 ,L^{(2)}_\Theta=2$ vs $L^{(1)}_{N1}=30,L^{(2)}_{N2}=20$. The raw data from each view is presented in \ref{fig:3DStrip_LowSNR_Data_views}.
+	%
+	\begin{figure}[H]\centering
+		\begin{tabular}{cc}
+			\hspace{-1.2in} \includegraphics[scale=0.2]{FiguresSynth/3DStrip_LowSNR_Data_view1.eps} &
+			\includegraphics[scale=0.2]{FiguresSynth/3DStrip_LowSNR_Data_view2.eps}
+		\end{tabular}
+		\caption {Raw datapoints acquired from the first view (left) and from the second view (right).}
+		\label{fig:3DStrip_LowSNR_Data_views}
+	\end{figure}
+	%
+	The eigenvalues diagram is depicted in \ref{fig:3DStrip_LowSNR_EVDiagram}.
+	%
+	\begin{figure}[H]\centering
+		\begin{tabular}{c}
+			\hspace{-0.1in} \includegraphics[scale=0.25]{FiguresSynth/3DStrip_LowSNR_EVDiagram_Geodesic.eps}
+		\end{tabular}
+		\caption {Eigenvalues diagram of $\gamma(t)$.}
+		\label{fig:3DStrip_LowSNR_EVDiagram}
+	\end{figure}
+	%
+	The tracking diagram and the proposed point along the geodesic is depicted in \ref{fig:3DStrip_LowSNR_EVDiagramTracking}.
+	It can be seen that the optimal point still maintains close to $t=0.5$, however, the SNR decay around the optimal point is much faster compared to the obtained SNR measures in the previous examples.
+	%
+	\begin{figure}[H]\centering
+		\begin{tabular}{cc}
+			\hspace{-1.2in} \includegraphics[scale=0.2]{FiguresSynth/3DStrip_LowSNR_EVDiagramTracking.eps} &
+			\includegraphics[scale=0.2]{FiguresSynth/3DStrip_LowSNR_SNR.eps}
+		\end{tabular}
+		\caption {The tracked eigenvalues diagram of $\gamma(t)$ (on the left side) with the corresponding SNR measure (on the right side).}
+		\label{fig:3DStrip_LowSNR_EVDiagramTracking}
+	\end{figure}
+	%
+	The importance of correct choice of the optimal $t$ is expressed in the diffusion patterns in \ref{fig:3DStrip_LowSNR_Diffs} as well.
+	%
+	\begin{figure}[H]\centering
+		\begin{tabular}{cc}
+			\hspace{-1.2in} \includegraphics[scale=0.1]{FiguresSynth/3DStrip_LowSNR_View1_t=0.eps} &
+			\includegraphics[scale=0.1]{FiguresSynth/3DStrip_LowSNR_View2_t=0.eps} \\
+			\hspace{-1.2in} (a) & (b)\\
+			\hspace{-1.2in} \includegraphics[scale=0.1]{FiguresSynth/3DStrip_LowSNR_View1_t=02.eps} &
+			\includegraphics[scale=0.1]{FiguresSynth/3DStrip_LowSNR_View2_t=02.eps} \\
+			\hspace{-1.2in} (c) & (d)\\
+			\hspace{-1.2in} \includegraphics[scale=0.1]{FiguresSynth/3DStrip_LowSNR_View1_t=tOptimal.eps} &
+			\includegraphics[scale=0.1]{FiguresSynth/3DStrip_LowSNR_View2_t=tOptimal.eps} \\ 
+			\hspace{-1.2in} (e) & (f)\\
+			\hspace{-1.2in} \includegraphics[scale=0.1]{FiguresSynth/3DStrip_LowSNR_View1_t=1.eps} &
+			\includegraphics[scale=0.1]{FiguresSynth/3DStrip_LowSNR_View2_t=1.eps} \\
+			\hspace{-1.2in} (g) & (h)\\
+		\end{tabular}
+		\caption {Diffusion patterns for several points along the geodesic. The first row corresponds to the diffusion pattern of $K_1$ ($\gamma(0)$), the second and the third rows correspond to $\gamma(0.3)$ and $\gamma(tOptimal)$ and the last row corresponds to the diffusion pattern of $K_2$ ($\gamma(1)$). On the left side the diffusion pattern is used to color the raw datapoints acquired by the first view and on the right it is used to color the raw datapoints acquired by the second view.}
+		\label{fig:3DStrip_LowSNR_Diffs}
+	\end{figure}
+	
+	\subsection{2D Torus}
+	\label{subsec:2DTorus}
+	In the previous subsection we considered the case in which the data in each view forms a strip. In this section we consider a different settings in which the data in each view forms a 3D torus. The hidden variables are the polodial and the torodial angles, and thew SNR in each view can be defined according to the ratio between the corresponding radii.
+	%
+	We consider two cases, in the first case the common hidden variable is the polodial angle in each view (low SNR), in the second case the common hidden variable represents the torodial angle (high SNR).
+	%
+	\subsubsection{Polodial is common}
+	In this section the common variable, $\Theta$, is the polodial angles in each view, and the view related variables, $N_1$ and $N_2$ are the toroidal angles in the first and the second view. 
+	The raw-data from each view is given by the following expression:
+	\begin{eqnarray*}
+		\label{eq:2DSTorusData}
+		x^{1}_i=(R_1 + r_1 \cdot cos(\Theta_i)) \cdot cos({N_1}_i) &;& x^{2}_i=(R_2+r_2 \cdot cos(\Theta_i)) \cdot cos({N_2}_i)\\
+		y^{1}_i=(R_1 + r_1 \cdot cos(\Theta_i)) \cdot sin({N_1}_i) &;& y^{2}_i=(R_2+r_2 \cdot cos(\Theta_i)) \cdot sin({N_2}_i)\\
+		z^{1}_i=r_1 \cdot sin(\Theta_i) &;& z^{2}_i=r_2 \cdot sin(\Theta_i)\\
+	\end{eqnarray*}
+	Where $R_1$ and $R_2$ are the major radii in the first an the second view respectively, and $r_1$ and $r_2$ are the minor radii in the first an the second view respectively.
+	%
+	The eigenvectors diagram is depicted in figure \ref{fig:3DTorus_PolodialCommon_LowSNR_EVDiagram}. 
+	\label{subsubsec:2DTorusPolodial}
+	\begin{figure}[H]\centering
+		\begin{tabular}{c}
+			\hspace{-0.1in} \includegraphics[scale=0.25]{FiguresSynth/3DTorus_PolodialCommon_LowSNR_EVDiagram_Geodesic.eps}
+		\end{tabular}
+		\caption {Eigenvalues diagram of $\gamma(t)$.}
+		\label{fig:3DTorus_PolodialCommon_LowSNR_EVDiagram}
+	\end{figure}
+	%
+	The tracking diagram with the corresponding SNR measure is given in \ref{fig:3DTorus_PolodialCommon_LowSNR_EVDiagramTracking}.
+	%
+	\begin{figure}[H]\centering
+		\begin{tabular}{cc}
+			\hspace{-1.2in} \includegraphics[scale=0.2]{FiguresSynth/3DTorus_PolodialCommon_LowSNR_EVDiagramTracking.eps} &
+			\includegraphics[scale=0.2]{FiguresSynth/3DTorus_PolodialCommon_LowSNR_SNR.eps}
+		\end{tabular}
+		\caption {The tracked eigenvalues diagram of $\gamma(t)$ (on the left side) with the corresponding SNR measure (on the right side).}
+		\label{fig:3DTorus_PolodialCommon_LowSNR_EVDiagramTracking}
+	\end{figure}
+	%
+	The diffusion patterns in $t=0, t=0.3, t=tOptimal$ and $t=1$ are shown in \ref{fig:3DTorus_PolodialCommon_LowSNR_Diffs}.
+	%
+	\begin{figure}[H]\centering
+		\begin{tabular}{cc}
+			\hspace{-0.5in} \includegraphics[scale=0.1]{FiguresSynth/3DTorus_PolodialCommon_LowSNR_View1_t=0.eps} &  \hspace{-0.1in} \includegraphics[scale=0.1]{FiguresSynth/3DTorus_PolodialCommon_LowSNR_View2_t=0.eps} \\
+			\hspace{-0.5in} (a) & (b)\\
+			\hspace{-0.5in} \includegraphics[scale=0.1]{FiguresSynth/3DTorus_PolodialCommon_LowSNR_View1_t=02.eps} &
+			\hspace{-0.1in} \includegraphics[scale=0.1]{FiguresSynth/3DTorus_PolodialCommon_LowSNR_View2_t=02.eps} \\
+			\hspace{-0.5in} (c) & (d)\\
+			\hspace{-0.5in} \includegraphics[scale=0.1]{FiguresSynth/3DTorus_PolodialCommon_LowSNR_View1_t=tOptimal.eps} &
+			\hspace{-0.1in} \includegraphics[scale=0.1]{FiguresSynth/3DTorus_PolodialCommon_LowSNR_View2_t=tOptimal.eps} \\
+			\hspace{-0.5in} (e) & (f)\\  
+			\hspace{-0.5in} \includegraphics[scale=0.1]{FiguresSynth/3DTorus_PolodialCommon_LowSNR_View1_t=1.eps} &
+			\hspace{-0.1in}
+			\includegraphics[scale=0.1]{FiguresSynth/3DTorus_PolodialCommon_LowSNR_View2_t=1.eps}\\
+			\hspace{-0.5in} (g) & (h)\\
+		\end{tabular}
+		\caption {Diffusion patterns for several points along the geodesic. The first row corresponds to the diffusion pattern of $K_1$ ($\gamma(0)$), the second and the third rows correspond to $\gamma(0.3)$ and $\gamma(tOptimal)$ and the last row corresponds to the diffusion pattern of $K_2$ ($\gamma(1)$).  On the left side the diffusion pattern is used to color the raw datapoints acquired by the first view and on the right it is used to color the raw datapoints acquired by the second view.}
+		\label{fig:3DTorus_PolodialCommon_LowSNR_Diffs}
+	\end{figure}
+	
+	\subsubsection{Torodial is common}
+	\label{subsubsec:2DTorusTorodial}
+	In this case the common hidden variable represents the torodial angle in each view, the data in each view is given by the following expression:
+	\begin{eqnarray*}\Theta_i
+		\label{eq:2DSTorusData}
+		x^{1}_i=(R_1 + r_1 \cdot cos({N_1}_i)) \cdot cos(\Theta_i {N_1}_i) &;& x^{2}_i=(R_2+r_2 \cdot cos({N_2}_i)) \cdot cos(\Theta_i)\\
+		y^{1}_i=(R_1 + r_1 \cdot cos({N_1}_i)) \cdot sin(\Theta_i) &;& y^{2}_i=(R_2+r_2 \cdot cos({N_2}_i)) \cdot sin(\Theta_i)\\
+		z^{1}_i=r_1 \cdot sin({N_1}_i)) &;& z^{2}_i=r_2 \cdot sin({N_2}_i))\\
+	\end{eqnarray*}
+	%
+	The eigenvectors diagram is depicted in figure \ref{fig:3DTorus_TorodialCommon_HighSNR_EVDiagram_Geodesic}. 
+	%
+	\begin{figure}[H]\centering
+		\begin{tabular}{c}
+			\hspace{-0.1in} \includegraphics[scale=0.25]{FiguresSynth/3DTorus_TorodialCommon_HighSNR_EVDiagram_Geodesic.eps}
+		\end{tabular}
+		\caption {Eigenvalues diagram of $\gamma(t)$.}
+		\label{fig:3DTorus_TorodialCommon_HighSNR_EVDiagram_Geodesic}
+	\end{figure}
+	%
+	The tracking diagram with the corresponding SNR measure is given in \ref{fig:3DTorus_PolodialCommon_HighSNR_EVDiagramTracking}.
+	%
+	\begin{figure}[H]\centering
+		\begin{tabular}{cc}
+			\hspace{-1.2in} \includegraphics[scale=0.2]{FiguresSynth/3DTorus_TorodialCommon_HighSNR_EVDiagramTracking.eps} &
+			\includegraphics[scale=0.2]{FiguresSynth/3DTorus_TorodialCommon_HighSNR_SNR.eps}
+		\end{tabular}
+		\caption {The tracked eigenvalues diagram of $\gamma(t)$ (on the left side) with the corresponding SNR measure (on the right side).}
+		\label{fig:3DTorus_PolodialCommon_HighSNR_EVDiagramTracking}
+	\end{figure}
+	%
+	The diffusion patterns in $t=0, t=0.3, t=tOptimal$ and $t=1$ are shown in \ref{fig:3DTorus_TorodialCommon_HighSNR_Diffs}.
+	%
+	\begin{figure}[H]\centering
+		\begin{tabular}{cc}
+			\hspace{-1.2in} \includegraphics[scale=0.1]{FiguresSynth/3DTorus_TorodialCommon_HighSNR_View1_t=0.eps} &
+			\includegraphics[scale=0.1]{FiguresSynth/3DTorus_TorodialCommon_HighSNR_View2_t=0.eps} \\
+			\hspace{-1.2in} (a) & (b) \\
+			\hspace{-1.2in} \includegraphics[scale=0.1]{FiguresSynth/3DTorus_TorodialCommon_HighSNR_View1_t=02.eps} &
+			\includegraphics[scale=0.1]{FiguresSynth/3DTorus_TorodialCommon_HighSNR_View2_t=02.eps} \\
+			\hspace{-1.2in} (c) & (d) \\
+			\hspace{-1.2in} \includegraphics[scale=0.1]{FiguresSynth/3DTorus_TorodialCommon_HighSNR_View1_t=tOptimal.eps} &
+			\includegraphics[scale=0.1]{FiguresSynth/3DTorus_TorodialCommon_HighSNR_View2_t=tOptimal.eps} \\ 
+			\hspace{-1.2in} (e) & (f) \\
+			\hspace{-1.2in} \includegraphics[scale=0.1]{FiguresSynth/3DTorus_TorodialCommon_HighSNR_View1_t=1.eps} &
+			\includegraphics[scale=0.1]{FiguresSynth/3DTorus_TorodialCommon_HighSNR_View2_t=1.eps}\\
+			\hspace{-1.2in} (g) & (h) \\
+		\end{tabular}
+		\caption {Diffusion patterns for several points along the geodesic. The first row corresponds to the diffusion pattern of $K_1$ ($\gamma(0)$), the second and the third rows correspond to $\gamma(0.3)$ and $\gamma(tOptimal)$ and the last row corresponds to the diffusion pattern of $K_2$ ($\gamma(1)$).  On the left side the diffusion pattern is used to color the raw datapoints acquired by the first view and on the right it is used to color the raw datapoints acquired by the second view.}
+		\label{fig:3DTorus_TorodialCommon_HighSNR_Diffs}
+	\end{figure}
+	
+	
+	
+	
+	\section{Real data}
+	\label{sec:RealData}
+	
+	\subsection{Condition monitoring}
+	\label{subsec:ConditionMonitoring}
+	
+	\subsubsection{Cooler}
+	\begin{figure}[H]\centering
+		\begin{tabular}{cc}
+			\includegraphics[scale=0.2]{FiguresCM/CM_Cooler_Sensor1_Data.eps} \\
+			\includegraphics[scale=0.2]{FiguresCM/CM_Cooler_Sensor2_Data.eps}
+		\end{tabular}
+		\caption {}
+		\label{fig:}
+	\end{figure}
+	
+	\begin{figure}[H]\centering
+		\begin{tabular}{cc}
+			\hspace{-1.2in} \includegraphics[scale=0.2]{FiguresCM/CM_Cooler_EVDiagram_Geodesic.eps} &
+			\includegraphics[scale=0.2]{FiguresCM/CM_Cooler_EVDiagram_Linear.eps}
+		\end{tabular}
+		\caption {}
+		\label{fig:}
+	\end{figure}
+	
+	\begin{figure}[H]\centering
+		\begin{tabular}{cc}
+			\hspace{-1.2in} \includegraphics[scale=0.2]{FiguresCM/CM_Cooler_EVDiagramTracking.eps} &
+			\includegraphics[scale=0.2]{FiguresCM/CM_Cooler_SNR.eps}
+		\end{tabular}
+		\caption {}
+		\label{fig:}
+	\end{figure}
+	
+	\begin{figure}[H]\centering
+		\begin{tabular}{cc}
+			\hspace{-1.2in} \includegraphics[scale=0.2]{FiguresCM/CM_Cooler_1DEmbedding_t=0.eps} & 
+			\includegraphics[scale=0.18]{FiguresCM/CM_Cooler_2DEmbedding_t=0.eps} \\ \\
+			\hspace{-1.2in} \includegraphics[scale=0.2]{FiguresCM/CM_Cooler_1DEmbedding_t=tOptimal.eps} & 
+			\includegraphics[scale=0.18]{FiguresCM/CM_Cooler_2DEmbedding_t=tOptimal.eps}\\ \\
+			\hspace{-1.2in} \includegraphics[scale=0.2]{FiguresCM/CM_Cooler_1DEmbedding_t=1.eps} &
+			\includegraphics[scale=0.18]{FiguresCM/CM_Cooler_2DEmbedding_t=1.eps}
+		\end{tabular}
+		\caption {}
+		\label{fig:}
+	\end{figure}
+	
+	
+	\subsubsection{Valve}
+	
+	\begin{figure}[H]\centering
+		\begin{tabular}{cc}
+			\includegraphics[scale=0.2]{FiguresCM/CM_Valve_Sensor1_Data.eps} \\
+			\includegraphics[scale=0.2]{FiguresCM/CM_Valve_Sensor2_Data.eps}
+		\end{tabular}
+		\caption {}
+		\label{fig:}
+	\end{figure}
+	
+	\begin{figure}[H]\centering
+		\begin{tabular}{cc}
+			\hspace{-1.2in} \includegraphics[scale=0.2]{FiguresCM/CM_Valve_EVDiagram_Geodesic.eps} &
+			\includegraphics[scale=0.2]{FiguresCM/CM_Valve_EVDiagram_Linear.eps}
+		\end{tabular}
+		\caption {}
+		\label{fig:}
+	\end{figure}
+	
+	\begin{figure}[H]\centering
+		\begin{tabular}{cc}
+			\hspace{-1.2in} \includegraphics[scale=0.2]{FiguresCM/CM_Valve_EVDiagramTracking.eps} &
+			\includegraphics[scale=0.2]{FiguresCM/CM_Valve_SNR.eps}
+		\end{tabular}
+		\caption {}
+		\label{fig:}
+	\end{figure}
+	
+	
+	\begin{figure}[H]\centering
+		\begin{tabular}{cc}
+			\hspace{-1.2in} \includegraphics[scale=0.2]{FiguresCM/CM_Valve_1DEmbedding_t=0.eps} & 
+			\includegraphics[scale=0.18]{FiguresCM/CM_Valve_3DEmbedding_t=0.eps} \\ \\
+			\hspace{-1.2in} \includegraphics[scale=0.2]{FiguresCM/CM_Valve_1DEmbedding_t=tOptimal.eps} & 
+			\includegraphics[scale=0.18]{FiguresCM/CM_Valve_3DEmbedding_t=tOptimal.eps}\\ \\
+			\hspace{-1.2in} \includegraphics[scale=0.2]{FiguresCM/CM_Valve_1DEmbedding_t=1.eps} &
+			\includegraphics[scale=0.18]{FiguresCM/CM_Valve_3DEmbedding_t=1.eps}
+		\end{tabular}
+		\caption {}
+		\label{fig:}
+	\end{figure}
+	
+	
+	\subsubsection{Valve with synthetic additive noise}
+	
+	\begin{figure}[H]\centering
+		\begin{tabular}{c}
+			\includegraphics[scale=0.2]{FiguresCM/CM_ValveWithSineNone_Sensor1_Data.eps} \\
+			\includegraphics[scale=0.2]{FiguresCM/CM_ValveWithSineNone_Sensor2_Data.eps}
+		\end{tabular}
+		\caption {}
+		\label{fig:}
+	\end{figure}
+	
+	\begin{figure}[H]\centering
+		\begin{tabular}{cc}
+			\hspace{-1.2in} \includegraphics[scale=0.2]{FiguresCM/CM_ValveWithSineNone_EVDiagram_Geodesic.eps} &
+			\includegraphics[scale=0.2]{FiguresCM/CM_ValveWithSineNone_EVDiagram_Linear.eps}
+		\end{tabular}
+		\caption {}
+		\label{fig:}
+	\end{figure}
+	
+	\begin{figure}[H]\centering
+		\begin{tabular}{cc}
+			\hspace{-1.2in} \includegraphics[scale=0.2]{FiguresCM/CM_ValveWithSineNone_EVDiagramTracking.eps} &
+			\includegraphics[scale=0.2]{FiguresCM/CM_ValveWithSineNone_SNR.eps}
+		\end{tabular}
+		\caption {}
+		\label{fig:}
+	\end{figure}
+	
+	\begin{figure}[H]\centering
+		\begin{tabular}{ccc}
+			\hspace{-1.5in} \includegraphics[scale=0.15]{FiguresCM/CM_ValveWithSineNone_Eigenvectors_t=0.eps} &
+			\includegraphics[scale=0.15]{FiguresCM/CM_ValveWithSineNone_Eigenvectors_t=tOptimal.eps} &
+			\includegraphics[scale=0.15]{FiguresCM/CM_ValveWithSineNone_Eigenvectors_t=1.eps}
+		\end{tabular}
+		\caption {}
+		\label{fig:}
+	\end{figure}
+	
+	
+	\begin{figure}[H]\centering
+		\begin{tabular}{cc}
+			\hspace{-1.2in} \includegraphics[scale=0.2]{FiguresCM/CM_ValveWithSineNone_1DEmbedding_t=0.eps} & 
+			\includegraphics[scale=0.18]{FiguresCM/CM_ValveWithSineNone_2DEmbedding_t=0.eps} \\ \\
+			\hspace{-1.2in} \includegraphics[scale=0.2]{FiguresCM/CM_ValveWithSineNone_1DEmbedding_t=tOptimal.eps} & 
+			\includegraphics[scale=0.18]{FiguresCM/CM_ValveWithSineNone_2DEmbedding_t=tOptimal.eps}\\ \\
+			\hspace{-1.2in} \includegraphics[scale=0.2]{FiguresCM/CM_ValveWithSineNone_1DEmbedding_t=1.eps} &
+			\includegraphics[scale=0.18]{FiguresCM/CM_ValveWithSineNone_2DEmbedding_t=1.eps}
+		\end{tabular}
+		\caption {}
+		\label{fig:}
+	\end{figure}
+	
+	\subsection{Artificial olfaction for e-nose application }
+	\label{subsec:ArtificialOlfaction}
+	
+	\begin{figure}[H]\centering
+		\begin{tabular}{cc}
+			\hspace{-1.2in} \includegraphics[scale=0.2]{FiguresGas/Gas_Acetald_EVDiagram_Geodesic.eps} &
+			\includegraphics[scale=0.2]{FiguresGas/Gas_Acetald_EVDiagram_Linear.eps}
+		\end{tabular}
+		\caption {}
+		\label{fig:}
+	\end{figure}
+	
+	\begin{figure}[H]\centering
+		\begin{tabular}{cc}
+			\hspace{-1.2in} \includegraphics[scale=0.2]{FiguresGas/Gas_Acetald_EVDiagramTracking.eps} &
+			\includegraphics[scale=0.2]{FiguresGas/Gas_Acetald_SNR.eps}
+		\end{tabular}
+		\caption {}
+		\label{fig:}
+	\end{figure}
+	
+	\begin{figure}[H]\centering
+		\begin{tabular}{ccc}
+			\hspace{-1.5in} \includegraphics[scale=0.15]{FiguresGas/Gas_Acetald_Eigenvectors_t=0.eps} &
+			\includegraphics[scale=0.15]{FiguresGas/Gas_Acetald_Eigenvectors_t=tOptimal.eps} &
+			\includegraphics[scale=0.15]{FiguresGas/Gas_Acetald_Eigenvectors_t=1.eps}
+		\end{tabular}
+		\caption {}
+		\label{fig:}
+	\end{figure}
+	
+	\begin{figure}[H]\centering
+		\begin{tabular}{ccc}
+			\hspace{-1in} \includegraphics[scale=0.15]{FiguresGas/Gas_Acetald_1DEmbedding_t=0.eps} & 
+			\includegraphics[scale=0.15]{FiguresGas/Gas_Acetald_ScatterV1_t=0.eps} &
+			\includegraphics[scale=0.15]{FiguresGas/Gas_Acetald_ClippedScatterV1_t=0.eps}  \\ \\
+			\hspace{-1in} \includegraphics[scale=0.15]{FiguresGas/Gas_Acetald_1DEmbedding_t=tOptimal.eps} & 
+			\includegraphics[scale=0.15]{FiguresGas/Gas_Acetald_ScatterV1_t=tOptimal.eps} &
+			\includegraphics[scale=0.15]{FiguresGas/Gas_Acetald_ClippedScatterV1_t=tOptimal.eps} \\ \\
+			\hspace{-1in} \includegraphics[scale=0.15]{FiguresGas/Gas_Acetald_1DEmbedding_t=1.eps} &
+			\includegraphics[scale=0.15]{FiguresGas/Gas_Acetald_ScatterV1_t=1.eps} &
+			\includegraphics[scale=0.15]{FiguresGas/Gas_Acetald_ClippedScatterV1_t=1.eps} 
+		\end{tabular}
+		\caption {}
+		\label{fig:}
+	\end{figure}
+	
+	
+	\section{Extensions}
+	\begin{itemize}
+		\item Rafi's projectoions extension
+		\item Extending to more than two sensors:
+		\begin{itemize}
+			\item Eigenvalues diagram on a convex hull, as depicted in \ref{fig:ConvexHull_EVDiagramTracking}.
+			\begin{figure}[H]\centering
+				\begin{tabular}{c}
+					\hspace{-0.1in} \includegraphics[scale=0.25]{FiguresSynth/ConvecHull_EVDiagramTracking.eps}
+				\end{tabular}
+				\caption{Eigenvalues diagram illustration for three views sharing a single hidden source of variability.}
+				\label{fig:ConvexHull_EVDiagramTracking}
+			\end{figure}
+			
+			\item Convergence of the stochastic algorithm for calculating the geometric mean (instead of the tangent heuristic with is for full rank only).
+		\end{itemize}
+	\end{itemize}
+	
+	\section{Future work}
+	
+	\begin{itemize}
+		\item Based on a certain model for the view related hidden variables, derive an expression describing their eigenvalues decay along the geodesic.
+		\item Demonstrate on a mixture (first view is a strip and the second is a torus) with mahalanobis.
+		
+		\item Adaptive geodesic mean for applications of time dynamics
+		\item Applications involving neural-nets:
+		\begin{itemize}
+			\item Finding optimal $t$ using back propagation.
+			\item Using the geodesic kernel for regularization term (TV between input and output, or for 2 views network)
+		\end{itemize} 
+		\item Applying to biological data
+	\end{itemize}
+	
+	
+	\bibliographystyle{IEEEbib}
+	\bibliography{papers}
+\end{document}
+
+
